@@ -312,10 +312,10 @@ void loop() {
 
     }
 
-    if (idChar == 'a') {
+    else if (idChar == 'a') {
       // Arm
       digitalWrite(PIN_ARM, HIGH);
-      delay(25);
+      delay(50);
       digitalWrite(PIN_ARM, LOW);
 
       Serial.println("Arming...");
@@ -328,7 +328,7 @@ void loop() {
     else if (idChar == 'r') {
       // Disarm
       digitalWrite(PIN_DISARM, HIGH);
-      delay(25);
+      delay(50);
       digitalWrite(PIN_DISARM, LOW);
 
       Serial.println("Reseting...");
@@ -341,6 +341,9 @@ void loop() {
   }
   
   sh.update();
+
+  // Solenoid packet format
+  
 
   // float sCurrent = sADC.getOutput() / (20.0f * R_CS_S);
   // Serial.print("Solenoid reading: ");
