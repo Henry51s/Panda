@@ -3,8 +3,10 @@
  * The MCP3561 uses SPI mode 0,0.
  * This should be turned into a class so that it's simpler to use.
  */
+#pragma once
 
 #include <SPI.h>
+
 #define DEVICE_ADDRESS 0b01
 #define DEVICE_ADDRESS_MASK (DEVICE_ADDRESS << 6)
 #define COMMAND_ADDR_POS 2
@@ -40,6 +42,7 @@
 #define CONFIG3_WRITE (CONFIG3_ADDR << COMMAND_ADDR_POS) | WRITE_COMMAND
 #define CONFIG3_CONV_MODE_POS 6
 #define CONFIG3_CONV_MODE_CONTINUOUS 0b11 << CONFIG3_CONV_MODE_POS
+#define CONFIG3_CONV_MODE_ONESHOT 0b10 << CONFIG3_CONV_MODE_POS
 
 #define IRQ_ADDR 0x05
 #define IRQ_WRITE (IRQ_ADDR << COMMAND_ADDR_POS) | WRITE_COMMAND
@@ -54,6 +57,7 @@
 #define MAX_SYNCHRONIZATION_POINTS 5000
 
 // USEFUL FAST COMMANDS AND OTHER COMMANDS
+#define FAST_CMD_START_RESTART DEVICE_ADDRESS_MASK |0b101000
 // Resets the device registers to their default  values
 #define DEVICE_RESET_COMMAND DEVICE_ADDRESS_BYTE | 0b111000
 
@@ -79,6 +83,10 @@ enum class BiasCurrentSettings : uint8_t {
   I_0_9UA = 0b01,
   I_3_7UA = 0b10,
   I_15UA = 0b11
+};
+
+enum class OversamplingSettings : uint8_t {
+
 };
 
 class MCP3561 {
@@ -133,6 +141,7 @@ class MCP3561 {
     float vref;
 
     void writeRegister(uint8_t reg_addr, uint8_t data);
+    void writeFastCommand(uint8_t fastCmd);
     uint8_t readRegister(uint8_t reg_addr);
 
   SPISettings spi_setting;
@@ -145,6 +154,7 @@ class MCP3561 {
     void readAllRegisters(void);
     void verifyRegisters(void);
     void printRegisters(void);
+    void trigger(void);
     float getOutput(void);
     void writeRegisterDefaults(void);
     void setVREF(float vref = 1.25f);
@@ -152,7 +162,7 @@ class MCP3561 {
     void setBiasCurrent(BiasCurrentSettings setting);
     void setMuxInputs(MuxSettings vinp, MuxSettings vinm);
     void setGain(GainSettings gain);
-
+    void setOversamplingRate();
 
     
 };

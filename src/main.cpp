@@ -3,9 +3,9 @@
 #include "SequenceHandler.hpp"
 #include <Wire.h>
 #include "MCP3561.hpp" // ADC
-#include "Mux.hpp"
+// #include "Mux.hpp"
 
-#define BAUD_RATE 9600
+#define BAUD_RATE 115200
 #define SERIAL_TIMEOUT 2000
 
 #define MAX_NUM_COMMANDS 32
@@ -31,11 +31,17 @@
 #define R_CS_S 0.1f // Solenoid current sense resistance
 #define R_CS_PT 47.f // PT current sense resistance
 
+// #define T_MUX_SETTLE_US 1000000 // Microseconds
+// #define T_CONV_US 500000 // Microseconds
+
+static constexpr uint8_t NUM_DC_CHANNELS = 12;
+static constexpr int T_MUX_SETTLE_US = 1000;
+static constexpr int T_CONV_US = 10000;
 // DC Channel pins. In order of channels 1 to 12
 uint8_t dcChannels[12] = {34, 35, 36, 37, 38, 39, 40, 41, 17, 16, 15, 14};
 
 // Solenoid current mux pins
-uint8_t sMux[4] = {18, 19, 23, 22};
+const uint8_t sMux[4] = {18, 19, 23, 22};
 
 // PT mux pins
 uint8_t ptMux[4] = {31, 30, 29, 28};
@@ -55,7 +61,111 @@ MCP3561 ptADC(SPI_PT_CS, SPI1);
 
 SequenceHandler sh;
 
-Multiplexer tcMux(tcMuxPins[0], tcMuxPins[1], tcMuxPins[2], tcMuxPins[3]);
+enum State : uint8_t {
+  IDLE,
+  WAIT_MUX,
+  WAIT_CONV
+};
+
+// Separate structs because the F (fluids) ADC has two muxes connected to it
+struct ADCMuxSystem {
+
+  private:
+
+  void selectChannel(uint8_t ch) {
+    for (uint8_t i = 0; i < 4; i++) {
+      digitalWrite(muxPins[i], (ch >> i) & 0x1);
+    }
+  }
+
+  // Pins
+  uint8_t muxPins[4];
+  MCP3561 &adc;
+
+  // State
+  State state = IDLE;
+  uint8_t channel = 5;
+  elapsedMicros timer;
+
+  // Outputs
+  uint8_t mapping[NUM_DC_CHANNELS] = {7, 6, 5, 4, 3, 2, 1, 0, 11, 10, 9, 8}; // mapping[i] = m | i is the mux channel, m is the corresponding solenoid channel on the board
+  float currentArr[NUM_DC_CHANNELS] = {0};
+
+  public:
+
+  ADCMuxSystem(const uint8_t pins[4], MCP3561 &mcp3561) : adc(mcp3561) {
+    for (int i = 0; i < 4; i++) {
+      muxPins[i] = pins[i];
+    }
+  }
+
+  // This should be called after all pins have been initialized in the regular setup()
+  void setup() {
+    for (uint8_t i = 0; i < 4; i++) {
+      pinMode(muxPins[i], OUTPUT);
+      digitalWrite(muxPins[i], LOW);
+    }
+  }
+
+  void update() {
+
+    switch(state) {
+      case IDLE:
+        // Select mux channel, reset timer and proceed to WAIT_MUX state
+        Serial.println("==========");
+        Serial.print("Mux channel now set to: "); // Debugging serial messages
+        Serial.println(channel);
+
+        selectChannel(channel);
+        timer = 0;
+        state = WAIT_MUX;
+        break;
+      case WAIT_MUX:
+        // wait for T_MUX_SETTLE_US, then start one-shot reading from ADC
+        // reset timer, then proceed to WAIT_CONV
+        if (timer >= T_MUX_SETTLE_US) {
+          Serial.print("Sending one-shot command. Current time since IDLE: ");
+          Serial.println(timer);
+          // Tell the ADC to perform one-shot
+          adc.trigger();
+          timer = 0;
+          state = WAIT_CONV;
+        }
+        break;
+      case WAIT_CONV:
+        // wait for T_CONV_US, then read the ADC output into the respective samples index
+        // Increment channel (If it's at 15, wrap back to zero, then we have a full sample array and we're good to process)
+        // return to IDLE
+        if (timer >= T_CONV_US) {
+          Serial.print("Reading from ADC. Current time since WAIT_MUX: ");
+          Serial.println(timer);
+          // Read ADC output
+          // Set samples[channel] to what the ADC outputs
+          float res = adc.getOutput();
+          currentArr[mapping[channel]] = res;
+          Serial.print("ADC output: ");
+          Serial.println(res, 5);
+          if (channel < NUM_DC_CHANNELS - 1 && channel >= 0) {channel++;}
+          else {channel = 0;}
+          timer = 0;
+          state = IDLE;
+        }
+        break;
+    }
+
+  }
+
+  
+
+};
+
+// struct ADCMux_F {
+
+//   // Might not even need
+
+// };
+
+ADCMuxSystem sSystem(sMux, sADC);
 
 void setup() {
   // put your setup code here, to run once:
@@ -127,6 +237,7 @@ void setup() {
   sADC.setGain(GainSettings::GAIN_1);
   sADC.setMuxInputs(MuxSettings::CH0, MuxSettings::AGND);
   sADC.setVREF(3.3f);
+  sADC.setBiasCurrent(BiasCurrentSettings::I_0);
 
   SPI1.begin();
   SPI1.setClockDivider(4);
@@ -146,10 +257,7 @@ void setup() {
   ptADC.setMuxInputs(MuxSettings::CH0, MuxSettings::AGND);
   ptADC.setVREF(1.25f);
 
-  // digitalWrite(dcChannels[0], HIGH);
-
-  tcMux.setActiveChannel(5);
-
+  sSystem.setup();
   // sh.setCommand("s11.01000,s10.02000,sA1.02000,sA0.00010");
 
   // while(true) {
@@ -163,6 +271,7 @@ void setup() {
 void loop() {
   // put your main code here, to run repeatedly:
 
+  // ========== Serial IO/Solenoid Sequence and command handling ==========
   static char rxBuffer[128] = {0}; // Keep buffer between calls
   static uint8_t readIndex = 0;    // Keep track of how full
 
@@ -170,37 +279,6 @@ void loop() {
   
   static bool collecting = true;
   static bool packetReady = false;
-
-  // while (Serial.available() > 0 && serialTimer <= SERIAL_TIMEOUT) {
-  //     char c = Serial.read();
-      
-  //     if (c == '\n') { // End of command
-  //         rxBuffer[readIndex] = '\0'; // Null-terminate string
-  //         fullPacket = true;
-  //         readIndex = 0; // Reset for next command
-  //         break;
-  //     }
-  //     else {
-  //         if (readIndex < sizeof(rxBuffer) - 1) { // Prevent buffer overflow
-  //             rxBuffer[readIndex++] = c;
-  //         }
-  //     }
-  // }
-
-  // if (fullPacket) {
-
-  //     if (rxBuffer[0] == 's' && sh.pollCommand() == false) {
-      
-  //     sh.setCommand(rxBuffer); // Sets the command once
-  //     sh.setState(true);
-
-  //     memset(rxBuffer, 0, sizeof(rxBuffer)); // Resets rxBuffer
-  //     fullPacket = false;
-  //   }
-
-  // }
-
-
 
   while (Serial.available() > 0) {
       char c = Serial.read();
@@ -342,39 +420,50 @@ void loop() {
   
   sh.update();
 
-  // Solenoid packet format
+  // =========== Solenoid Current Data Acquisition ===========
+
+  // Reading solenoid current data 
+  // Mapping multiplexer channels to the corresponding DC channel (Extremely cursed)
+  sSystem.update();
+
   
-
-  // float sCurrent = sADC.getOutput() / (20.0f * R_CS_S);
-  // Serial.print("Solenoid reading: ");
-  // Serial.print(sCurrent, 6);
-  // Serial.print(" | ");
-
-  // float ptCurrent = (ptADC.getOutput() / (4.0f));
-  // Serial.print("PT reading: ");
-  // Serial.println(ptCurrent, 10);
-
-  // // Reading solenoid current data (Extremely cursed)
-  // // Mapping multiplexer channels to the corresponding DC channel
-  // uint8_t muxMap[12] = {7, 6, 5, 4, 3, 2, 1, 0, 11, 10, 9, 8};
+  
+  
 
   // for (int i = 0; i < 12; i++) {
   //   uint8_t activeChannelIndex = muxMap[i]; // Active multiplexer channel (0-index)
   //   // uint8_t activeChannel = activeChannelIndex + 1; // Active DC channel (1-index). Don't know if this is necessary
-
   //   // Converting activeChannelIndex to binary for muxing
-  //   for (int j = 0; j < 4; i++) {
+  //   for (int j = 0; j < 4; j++) {
   //     uint8_t binaryDigit = (activeChannelIndex >> j) & 1;
   //     digitalWrite(sMux[j], binaryDigit);
   //   }
+
+  //   // Overkill conversions per channel
+  //   delayMicroseconds(70);
+  //   int sampleCounter = 0;
+  //   while (sampleCounter < 100) {
+  //     currentArr[i] = sADC.getOutput() / R_CS_S;
+  //     sampleCounter++;
+  //   }
   // }
-  // sADC.readRegisters();
-  //UART1.println(adc.getADCData(), BIN);
-  //UART1.println(ptADC.getADCData());
-  //ptADC.printRegisters();
-  //UART1.println(adc.adc_data[0]);
-  // ptADC.getOutput();
-  // delay(5);
+
+  // for (int i = 0; i < 12; i++) {
+  //   Serial.print("|");
+  //   Serial.print(currentArr[i], 4);
+  //   if (i == 11) Serial.println(currentArr[i],4);
+  // }
+
+  /*
+  Complete Solenoid Status packet format:
+  <Solenoid Packet Identifier>\n
+  <Solenoid Channel #>,<State>,<Current e.g. 0900 = 900mA>\n
+  .
+  .
+  .
+  <Solenoid Channel #>,<State>,<Current>\n
+  <Checksum>
+  */
 
   
   
@@ -382,6 +471,8 @@ void loop() {
 
   // sh.printCurrentCommand();
   // delay(500);
+  
+  // ========== PT/Load Cell/TC Data Acquisition ==========
 }
 
 // void I2CScanner() {

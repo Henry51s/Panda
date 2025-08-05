@@ -45,6 +45,17 @@ void MCP3561::writeRegister(uint8_t reg_addr, uint8_t data) {
 
 }
 
+void MCP3561::writeFastCommand(uint8_t fastCmd) {
+
+  spi.beginTransaction(spi_setting);
+  digitalWrite(chip_select_pin, LOW);
+  spi.transfer(fastCmd);
+  digitalWrite(chip_select_pin, HIGH);
+  spi.endTransaction();
+
+
+}
+
 uint8_t MCP3561::readRegister(uint8_t reg_addr) {
 
   uint8_t command = (DEVICE_ADDRESS << 6) | (reg_addr << 2) | SREAD_COMMAND_MASK;
@@ -123,6 +134,9 @@ void MCP3561::setGain(GainSettings gain) {
 
 }
 
+void MCP3561::trigger(void) {
+  writeFastCommand(FAST_CMD_START_RESTART);
+}
 
 void MCP3561::writeRegisterDefaults(void) {
 
@@ -151,8 +165,8 @@ void MCP3561::writeRegisterDefaults(void) {
 
   // Next, write to CONFIG3 register.
   command_byte = CONFIG3_WRITE;
-  // Change ADC mode to continuous conversion
-  data_byte = CONFIG3_CONV_MODE_CONTINUOUS;
+  // Change ADC mode to one-shot conversion
+  data_byte = CONFIG3_CONV_MODE_ONESHOT;
   writeRegister(CONFIG3_ADDR, data_byte);
   // digitalWrite(chip_select_pin, LOW);
   // spi.transfer(command_byte);
@@ -178,6 +192,46 @@ void MCP3561::writeRegisterDefaults(void) {
   // spi.endTransaction();
 
   // writeRegister(0x06, 0b00011000);
+}
+
+
+
+float MCP3561::getOutput() {
+  // 1) pull the data off the bus
+  spi.beginTransaction(spi_setting);
+  digitalWrite(chip_select_pin, LOW);
+  spi.transfer(SREAD_DATA_COMMAND);
+  uint8_t b0 = spi.transfer(0);  // MSB
+  uint8_t b1 = spi.transfer(0);
+  uint8_t b2 = spi.transfer(0);  // LSB
+  digitalWrite(chip_select_pin, HIGH);
+  spi.endTransaction();
+
+
+
+  uint32_t raw24 = (uint32_t(b0) << 16)
+                 | (uint32_t(b1) <<  8)
+                 |  uint32_t(b2);
+  raw24 &= 0x00FFFFFF;  // ensure only bits 0–23 remain
+
+  int32_t value = (raw24 & 0x800000)
+                ? int32_t(raw24 | 0xFF000000)
+                : int32_t(raw24);
+
+  // Serial.print("Raw bytes: 0x");
+  // if (b0 < 0x10) Serial.print('0');
+  // Serial.print(b0, HEX);
+  // Serial.print(" 0x");
+  // if (b1 < 0x10) Serial.print('0');
+  // Serial.print(b1, HEX);
+  // Serial.print(" 0x");
+  // if (b2 < 0x10) Serial.print('0');
+  // Serial.print(b2, HEX);
+  // Serial.println();
+  // Serial.print("Signed value: ");
+  // Serial.println(value);
+
+  return value * vref / 8388608.0f;
 }
 
 void MCP3561::readAllRegisters(void) {
@@ -295,42 +349,4 @@ void MCP3561::printRegisters(void) {
   Serial.print("CRCCFG: ");
   Serial.println(scan_data, BIN);
   Serial.println("-----------------------------");
-}
-
-float MCP3561::getOutput() {
-  // 1) pull the data off the bus
-  spi.beginTransaction(spi_setting);
-  digitalWrite(chip_select_pin, LOW);
-  spi.transfer(SREAD_DATA_COMMAND);
-  uint8_t b0 = spi.transfer(0);  // MSB
-  uint8_t b1 = spi.transfer(0);
-  uint8_t b2 = spi.transfer(0);  // LSB
-  digitalWrite(chip_select_pin, HIGH);
-  spi.endTransaction();
-
-
-
-  uint32_t raw24 = (uint32_t(b0) << 16)
-                 | (uint32_t(b1) <<  8)
-                 |  uint32_t(b2);
-  raw24 &= 0x00FFFFFF;  // ensure only bits 0–23 remain
-
-  int32_t value = (raw24 & 0x800000)
-                ? int32_t(raw24 | 0xFF000000)
-                : int32_t(raw24);
-
-  // Serial.print("Raw bytes: 0x");
-  // if (b0 < 0x10) Serial.print('0');
-  // Serial.print(b0, HEX);
-  // Serial.print(" 0x");
-  // if (b1 < 0x10) Serial.print('0');
-  // Serial.print(b1, HEX);
-  // Serial.print(" 0x");
-  // if (b2 < 0x10) Serial.print('0');
-  // Serial.print(b2, HEX);
-  // Serial.println();
-  // Serial.print("Signed value: ");
-  // Serial.println(value);
-
-  return value * vref / 8388608.0f;
 }
