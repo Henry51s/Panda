@@ -5,11 +5,6 @@
 #include "MCP3561.hpp" // ADC
 // #include "Mux.hpp"
 
-#define BAUD_RATE 115200
-#define SERIAL_TIMEOUT 2000
-
-#define MAX_NUM_COMMANDS 32
-
 // Arming pins
 #define PIN_ARM 32
 #define PIN_DISARM 33
@@ -31,24 +26,24 @@
 #define R_CS_S 0.1f // Solenoid current sense resistance
 #define R_CS_PT 47.f // PT current sense resistance
 
+static constexpr int SERIAL_BAUD_RATE = 115200;
+static constexpr int SERIAL_TIMEOUT = 2000;
+
+static constexpr uint8_t NUM_MAX_COMMANDS = 32;
+
 static constexpr uint8_t NUM_DC_CHANNELS = 12;
 static constexpr uint8_t NUM_PT_CHANNELS = 16;
 static constexpr uint8_t NUM_LC_CHANNELS = 6;
 static constexpr uint8_t NUM_TC_CHANNELS = 6;
 
-static constexpr int T_MUX_SETTLE_US = 100000;
-static constexpr int T_CONV_US = 1000000;
+static constexpr int T_MUX_SETTLE_US = 500;
+static constexpr int T_CONV_US = 1000;
 
 static constexpr bool SERIAL_DEBUG_S = true;
 static constexpr bool SERIAL_DEBUG_F = true;
 
-static constexpr uint8_t NUM_BANKS = 2;
-static constexpr uint8_t BANK_PT = 0;
-static constexpr uint8_t BANK_TC_LC = 1;
-
-
-const uint8_t ptMux[4] = {31, 30, 29, 28};
-const uint8_t lctcMux[4] = {3, 4, 6, 5};
+const uint8_t ptMux[4] = {31, 30, 29, 28}; // Mux pins for PTs
+const uint8_t lctcMux[4] = {3, 4, 6, 5}; // Mux pins for both LCs and TCs
 
 // DC Channel pins. In order of channels 1 to 12
 const uint8_t dcChannels[12] = {34, 35, 36, 37, 38, 39, 40, 41, 17, 16, 15, 14};
@@ -61,11 +56,12 @@ FlexSerial UART1(8, 7);
 // Ability to turn on and off telemetry
 bool sendState = false;
 
-
 MCP3561 sADC(SPI_S_CS, SPI);
 MCP3561 ptADC(SPI_PT_CS, SPI1);
 
 SequenceHandler sh;
+
+// ========== State machine ==========
 
 enum State : uint8_t {
   IDLE,
@@ -73,160 +69,68 @@ enum State : uint8_t {
   WAIT_CONV
 };
 
-// Separate structs because the F (fluids) ADC has two muxes connected to it
-struct ADCMuxSystem_S {
+struct Bank {
+  MCP3561 &adc;
+  MuxSettings adcIn;
+  const uint8_t* muxPins;
+  float* data;
+  uint8_t numChannel;
+};
+
+static float sData[NUM_DC_CHANNELS] = {0}, ptData[NUM_PT_CHANNELS] = {0}, lctcData[NUM_LC_CHANNELS + NUM_TC_CHANNELS] = {0};
+
+/*
+bank[0] - Solenoid channel current reading
+bank[1] - PT channel reading
+bank[2] - LC & TC channel reading (LC and TC data arrays are combined because they share the same mux)
+*/
+static constexpr Bank banks[] = {
+
+  {sADC, MuxSettings::CH0, sMux, sData, NUM_DC_CHANNELS},
+  {ptADC, MuxSettings::CH1, ptMux, ptData, NUM_PT_CHANNELS},
+  {ptADC, MuxSettings::CH0, lctcMux, lctcData, NUM_LC_CHANNELS + NUM_TC_CHANNELS}
+
+};
+
+static constexpr uint8_t NUM_BANKS = sizeof(banks) / sizeof(banks[0]);
+
+struct ADCMuxSystem {
 
   private:
-
-  void selectChannel(uint8_t ch) {
-    for (uint8_t i = 0; i < 4; i++) {
-      digitalWrite(muxPins[i], (ch >> i) & 0x1);
-    }
-  }
-
-  // Pins
-  uint8_t muxPins[4];
-  MCP3561 &adc;
 
   // State
   State state = IDLE;
-  uint8_t channel = 0;
-  elapsedMicros timer;
-
-  // Outputs
-  uint8_t mapping[NUM_DC_CHANNELS] = {7, 6, 5, 4, 3, 2, 1, 0, 11, 10, 9, 8}; // mapping[i] = m | i is the mux channel, m is the corresponding solenoid channel on the board
-
-  public:
-
-  float currentArr[NUM_DC_CHANNELS] = {0};
-
-  ADCMuxSystem_S(const uint8_t pins[4], MCP3561 &mcp3561) : adc(mcp3561) {
-    for (int i = 0; i < 4; i++) {
-      muxPins[i] = pins[i];
-    }
-  }
-
-  // This should be called after all pins have been initialized in the regular setup()
-  void setup() {
-    for (uint8_t i = 0; i < 4; i++) {
-      pinMode(muxPins[i], OUTPUT);
-      digitalWrite(muxPins[i], LOW);
-    }
-  }
-
-  void update() {
-
-    switch(state) {
-      case IDLE:
-        // Select mux channel, reset timer and proceed to WAIT_MUX state
-        Serial.println("==========");
-        Serial.print("Mux channel now set to: "); // Debugging serial messages
-        Serial.println(channel);
-
-        selectChannel(channel);
-        timer = 0;
-        state = WAIT_MUX;
-        break;
-      case WAIT_MUX:
-        // wait for T_MUX_SETTLE_US, then start one-shot reading from ADC
-        // reset timer, then proceed to WAIT_CONV
-        if (timer >= T_MUX_SETTLE_US) {
-          Serial.print("Sending one-shot command. Current time since IDLE: ");
-          Serial.println(timer);
-          // Tell the ADC to perform one-shot
-          adc.trigger();
-          timer = 0;
-          state = WAIT_CONV;
-        }
-        break;
-      case WAIT_CONV:
-        // wait for T_CONV_US, then read the ADC output into the respective samples index
-        // Increment channel (If it's at 15, wrap back to zero, then we have a full sample array and we're good to process)
-        // return to IDLE
-        if (timer >= T_CONV_US) {
-          Serial.print("Reading from ADC. Current time since WAIT_MUX: ");
-          Serial.println(timer);
-          // Read ADC output
-          // Set samples[channel] to what the ADC outputs
-          float res = adc.getOutput();
-          Serial.print("ADC output: ");
-          Serial.println(res, 5);
-          if (channel < NUM_DC_CHANNELS - 1 && channel >= 0) {channel++;}
-          else {channel = 0;}
-          timer = 0;
-          state = IDLE;
-        }
-        break;
-    }
-  }
-};
-
-
-struct ADCMuxSystem_F {
-
-  private:
-
-  void selectChannel(uint8_t ch, const uint8_t muxPins[4]) {
-    for (uint8_t i = 0; i < 4; i++) {
-      digitalWrite(muxPins[i], (ch >> i) & 0x1);
-    }
-  }
-
-  // pointers into the above static arrays:
-  const uint8_t numChArr[NUM_BANKS] = {
-    NUM_PT_CHANNELS,
-    NUM_TC_CHANNELS + NUM_LC_CHANNELS
-  };
-
-  float ptArr[NUM_PT_CHANNELS] = {0}, lctcArr[NUM_LC_CHANNELS + NUM_TC_CHANNELS] = {0};
-
-  float* dataArr[NUM_BANKS]  = {ptArr, tcArr};
-
   uint8_t bank = 0;
-  MCP3561 &adc;
-
-  // State
-  State state = IDLE;
   uint8_t channel = 0;
   elapsedMicros timer;
 
   // Outputs
-  // uint8_t mapping[NUM_PT_CHANNELS] = {7, 6, 5, 4, 3, 2, 1, 0, 11, 10, 9, 8}; // mapping[i] = m | i is the mux channel, m is the corresponding solenoid channel on the board
+  // uint8_t mapping[NUM_DC_CHANNELS] = {7, 6, 5, 4, 3, 2, 1, 0, 11, 10, 9, 8}; // mapping[i] = m | i is the mux channel, m is the corresponding solenoid channel on the board
 
   public:
-
-  float ptArr[NUM_PT_CHANNELS] = {0};
-  float lcArr[NUM_LC_CHANNELS] = {0};
-  float tcArr[NUM_TC_CHANNELS] = {0};
-
-  ADCMuxSystem_F(MCP3561 &mcp3561) : adc(mcp3561) {
-
-    // Inititalize mux pins for fluids
-
-  }
-
   // This should be called after all pins have been initialized in the regular setup()
   void setup() {
-    for (uint8_t i = 0; i < 4; i++) {
-      pinMode(mux1[i], OUTPUT);
-      pinMode(mux2[i], OUTPUT);
-      digitalWrite(mux1[i], LOW);
-      digitalWrite(mux2[i], LOW);
+    for (auto b : banks) {
+      for (int i = 0; i < 4; i++) {
+        pinMode(b.muxPins[i], OUTPUT);
+        digitalWrite(b.muxPins[i], LOW);
+      }
     }
   }
 
   void update() {
 
+    const Bank& currentBank = banks[bank];
+
     switch(state) {
       case IDLE:
-        // Select mux channel, reset timer and proceed to WAIT_MUX state
-        if (SERIAL_DEBUG_F) {
-          Serial.println("==========");
-          Serial.print("Mux channel now set to: "); // Debugging serial messages
-          Serial.println(channel);
+        // Select mux channel and ADC input channel, reset timer and proceed to WAIT_MUX state
+        currentBank.adc.setMuxInputs(currentBank.adcIn, MuxSettings::AGND);
+
+        for (int i = 0; i < 4; i++) {
+          digitalWrite(currentBank.muxPins[i], (channel >> i) & 1);
         }
-      
-        selectChannel(channel);
+
         timer = 0;
         state = WAIT_MUX;
         break;
@@ -234,13 +138,8 @@ struct ADCMuxSystem_F {
         // wait for T_MUX_SETTLE_US, then start one-shot reading from ADC
         // reset timer, then proceed to WAIT_CONV
         if (timer >= T_MUX_SETTLE_US) {
-          if (SERIAL_DEBUG_F) {
-            Serial.print("Sending one-shot command. Current time since IDLE: ");
-            Serial.println(timer);
-          }
-          
           // Tell the ADC to perform one-shot
-          adc.trigger();
+          currentBank.adc.trigger();
           timer = 0;
           state = WAIT_CONV;
         }
@@ -252,15 +151,18 @@ struct ADCMuxSystem_F {
         if (timer >= T_CONV_US) {
           // Read ADC output
           // Set samples[channel] to what the ADC outputs
-          float res = adc.getOutput();
-          if (SERIAL_DEBUG_F) {
-            Serial.print("Reading from ADC. Current time since WAIT_MUX: ");
-            Serial.println(timer);  
-            Serial.print("ADC output: ");
-            Serial.println(res, 5);
+          float res = currentBank.adc.getOutput();
+          currentBank.data[channel] = res;
+
+          // Advancing channel and/or bank
+          channel++;
+          if (channel >= currentBank.numChannel) {
+            channel = 0;
+            bank++;
+            if (bank >= NUM_BANKS) {
+              bank = 0;
+            }
           }
-          if (channel < NUM_DC_CHANNELS - 1 && channel >= 0) {channel++;}
-          else {channel = 0;}
           timer = 0;
           state = IDLE;
         }
@@ -269,14 +171,15 @@ struct ADCMuxSystem_F {
   }
 };
 
-ADCMuxSystem_S sSystem(sMux, sADC);
+// ADCMuxSystem sSystem(sMux, sADC);
 // ADCMuxSystem ptSystem(ptMux, ptADC);
+ADCMuxSystem scanner;
 
 void setup() {
   // put your setup code here, to run once:
-  UART1.begin(BAUD_RATE); //RS-485 bus 1
+  UART1.begin(SERIAL_BAUD_RATE); //RS-485 bus 1
   UART1.setTimeout(100);
-  Serial.begin(BAUD_RATE); // Debugging via serial monitor
+  Serial.begin(SERIAL_BAUD_RATE); // Debugging via serial monitor
   Wire2.begin();
   // I2CScanner();
 
@@ -362,7 +265,9 @@ void setup() {
   ptADC.setMuxInputs(MuxSettings::CH1, MuxSettings::AGND);
   ptADC.setVREF(1.25f);
 
-  sSystem.setup();
+  scanner.setup();
+
+  // sSystem.setup();
   // ptSystem.setup();
   // sh.setCommand("s11.01000,s10.02000,sA1.02000,sA0.00010");
 
@@ -526,39 +431,21 @@ void loop() {
   
   sh.update();
 
-  // =========== Solenoid Current Data Acquisition ===========
+  // =========== Data Acquisition ===========
 
-  // Reading solenoid current data 
-  // Mapping multiplexer channels to the corresponding DC channel (Extremely cursed)
-  // sSystem.update();
-
-  // Debugging
-  // for (int i = 0; i < NUM_DC_CHANNELS; i++) {
-  //   if (i != 11) {
-  //     Serial.print(sSystem.currentArr[i], 5);
-  //     Serial.print("|");
-  //   }
-  //   else {
-  //     Serial.println(sSystem.currentArr[i], 5);
-  //   }
-  // }
-
-  // ========== PT Data Acquisition ==========
-
+  scanner.update();
   
-  // ptSystem.update();
-    // Debugging
-  // for (int i = 0; i < 16; i++) {
-  //   if (i != 15) {
-  //     Serial.print(ptSystem.currentArr[i], 5);
-  //     Serial.print("|");
-  //   }
-  //   else {
-  //     Serial.println(ptSystem.currentArr[i], 5);
-  //   }
-  // }
+  Bank sBank = banks[0];
+  Bank ptBank = banks[1];
 
-  // ========== TC/LC Data Acquisition ==========
+  for (int i = 0; i < NUM_PT_CHANNELS; i++) {
+    Serial.print(ptBank.data[i], 5);
+    Serial.print("|");
+
+    if (i == NUM_PT_CHANNELS - 1) {
+      Serial.println(ptBank.data[i]);
+    }
+  }
 
   /*
   Complete Solenoid Status packet format:
@@ -570,13 +457,6 @@ void loop() {
   <Solenoid Channel #>,<State>,<Current>\n
   <Checksum>
   */
-
-  
-  
- 
-
-  // sh.printCurrentCommand();
-  // delay(500);
   
 }
 
