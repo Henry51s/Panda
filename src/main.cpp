@@ -77,7 +77,7 @@ struct Bank {
   uint8_t numChannel;
 };
 
-static float sData[NUM_DC_CHANNELS] = {0}, ptData[NUM_PT_CHANNELS] = {0}, lctcData[NUM_LC_CHANNELS + NUM_TC_CHANNELS] = {0};
+static float sData[NUM_DC_CHANNELS] = {0}, ptData[NUM_PT_CHANNELS] = {0}, lctcData[12] = {0};
 
 /*
 bank[0] - Solenoid channel current reading
@@ -88,7 +88,7 @@ static constexpr Bank banks[] = {
 
   {sADC, MuxSettings::CH0, sMux, sData, NUM_DC_CHANNELS},
   {ptADC, MuxSettings::CH1, ptMux, ptData, NUM_PT_CHANNELS},
-  {ptADC, MuxSettings::CH0, lctcMux, lctcData, NUM_LC_CHANNELS + NUM_TC_CHANNELS}
+  {ptADC, MuxSettings::CH0, lctcMux, lctcData, 12}
 
 };
 
@@ -202,10 +202,10 @@ void setup() {
     pinMode(sMux[i], OUTPUT);
   }
 
-  digitalWrite(sMux[0], HIGH);
-  digitalWrite(sMux[1], HIGH);
-  digitalWrite(sMux[2], HIGH);
-  digitalWrite(sMux[3], LOW);
+  // digitalWrite(sMux[0], HIGH);
+  // digitalWrite(sMux[1], HIGH);
+  // digitalWrite(sMux[2], HIGH);
+  // digitalWrite(sMux[3], LOW);
 
   for (int i = 0; i < 4; i++) {
     pinMode(ptMux[i], OUTPUT);
@@ -262,7 +262,7 @@ void setup() {
   ptADC.writeRegisterDefaults();
   delay(100);
   ptADC.setGain(GainSettings::GAIN_1);
-  ptADC.setMuxInputs(MuxSettings::CH1, MuxSettings::AGND);
+  ptADC.setMuxInputs(MuxSettings::CH0, MuxSettings::AGND);
   ptADC.setVREF(1.25f);
 
   scanner.setup();
@@ -437,15 +437,24 @@ void loop() {
   
   Bank sBank = banks[0];
   Bank ptBank = banks[1];
+  Bank lctcBank = banks[2];
 
-  for (int i = 0; i < NUM_PT_CHANNELS; i++) {
-    Serial.print(ptBank.data[i], 5);
-    Serial.print("|");
-
-    if (i == NUM_PT_CHANNELS - 1) {
-      Serial.println(ptBank.data[i]);
+  Serial.println("===========");
+  for (int i = 0; i < 12; i++) {
+    if (i < 5) {
+      Serial.print("LC Channel ");
+      Serial.print(i + 1);
+      Serial.print(": ");
+      Serial.println(lctcBank.data[i], 3);
+    }
+    else {
+      Serial.print("TC Channel ");
+      Serial.print(i + 1);
+      Serial.print(": ");
+      Serial.println(lctcBank.data[i], 3);
     }
   }
+  Serial.println("===========");
 
   /*
   Complete Solenoid Status packet format:
