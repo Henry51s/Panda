@@ -22,12 +22,13 @@
 #define SPI_PT_MOSI 26
 #define SPI_PT_MISO 1
 #define SPI_PT_SCK 27
-
 #define R_CS_S 0.1f // Solenoid current sense resistance
 #define R_CS_PT 47.f // PT current sense resistance
 
 static constexpr int SERIAL_BAUD_RATE = 115200;
 static constexpr int SERIAL_TIMEOUT = 2000;
+static constexpr uint16_t PACKET_IDLE_MS = 100;
+static constexpr uint16_t PULSE_DURATION = 500;
 
 static constexpr uint8_t NUM_MAX_COMMANDS = 32;
 
@@ -60,6 +61,8 @@ MCP3561 sADC(SPI_S_CS, SPI);
 MCP3561 ptADC(SPI_PT_CS, SPI1);
 
 SequenceHandler sh;
+
+static elapsedMillis armTimer = 0;
 
 // ========== State machine ==========
 
@@ -171,15 +174,50 @@ struct ADCMuxSystem {
   }
 };
 
+// Handling non-blocking pulses for arming and safing
+struct Pulse {
+
+  private:
+    uint8_t pin;
+    elapsedMillis timer = 0;
+    bool active = false;
+
+  public:
+    Pulse(uint8_t pin_): pin(pin_) {}
+
+    void start() {
+      digitalWrite(pin, HIGH);
+      timer = 0;
+      active = true;
+    }
+
+    void cancel() {
+      if (active) {
+        active = false;
+        digitalWrite(pin, LOW);
+      }
+    }
+
+    void update() {
+      if (active && timer > PULSE_DURATION) {
+        active = false;
+        digitalWrite(pin, LOW);
+      }
+    }
+
+};
+
 // ADCMuxSystem sSystem(sMux, sADC);
 // ADCMuxSystem ptSystem(ptMux, ptADC);
 ADCMuxSystem scanner;
+Pulse armPulse(PIN_ARM);
+Pulse disarmPulse(PIN_DISARM);
 
 void setup() {
   // put your setup code here, to run once:
   UART1.begin(SERIAL_BAUD_RATE); //RS-485 bus 1
   UART1.setTimeout(100);
-  Serial.begin(SERIAL_BAUD_RATE); // Debugging via serial monitor
+  // Serial.begin(SERIAL_BAUD_RATE); // Debugging via serial monitor
   Wire2.begin();
   // I2CScanner();
 
@@ -283,25 +321,48 @@ void loop() {
   // put your main code here, to run repeatedly:
 
   // ========== Serial IO/Solenoid Sequence and command handling ==========
+
+  /*
+  Single-letter commands:
+  'a' - Arm
+  'r' - Safe
+  'f' - Fire active sequence
+
+  Solenoid command: S<Channel identifier in hex><State (1 or 0)> 
+  [Example: S11 turns channel 1 on]
+  Solenoid sequence: s<Channel identifier in hex><State>.<Delay after in milliseconds (5 digits)>,... 
+  [Example: s11.01000,s10.00000 turns channel 1 on for 1000ms, then turns channel 1 off]
+  */
+
   static char rxBuffer[128] = {0}; // Keep buffer between calls
   static uint8_t readIndex = 0;    // Keep track of how full
 
-  static elapsedMillis serialTimer = 0;
+  static elapsedMillis lastByteTimer = 0;
   
-  static bool collecting = true;
+  // static bool collecting = true;
   static bool packetReady = false;
 
-  while (Serial.available() > 0) {
-      char c = Serial.read();
+  while (UART1.available() > 0) {
+      char c = UART1.read();
+      lastByteTimer = 0;
 
-      if (c == '\r') continue;
+      // if (c == '\r') continue;
       
-      if (c == '\n') { // End of command
-          rxBuffer[readIndex] = '\0'; // Null-terminate string
-          packetReady = true; 
-          collecting = false;
-          readIndex = 0; // Reset for next command
-          break;
+      // if (c == '\n') { // End of command
+      //     rxBuffer[readIndex] = '\0'; // Null-terminate string
+      //     packetReady = true; 
+      //     collecting = false;
+      //     readIndex = 0; // Reset for next command
+      //     break;
+      // }
+
+      if (c == '\r' || c == '\n') {
+        if (readIndex > 0) {
+          rxBuffer[readIndex] = '\0';
+          packetReady = true;
+        }
+        readIndex = 0;
+        break;
       }
 
       if (readIndex < sizeof(rxBuffer) - 1) {
@@ -312,21 +373,34 @@ void loop() {
 
         rxBuffer[sizeof(rxBuffer) - 1] = '\0';
         packetReady = true;
-        collecting = false;
         readIndex = 0;
         break;
 
       }
+
+        // if (readIndex == 3 && rxBuffer[0] == 's') {
+        //   rxBuffer[3] = '\0';
+        //   packetReady = true;
+        //   readIndex = 0;
+        //   break;
+        // }
 
       // if (collecting && serialTimer >= SERIAL_TIMEOUT) {
       //   collecting = false;
       //   readIndex = 0; // Reset for next comman
       //   break;
       // }
+      
+  }
+
+  if (!packetReady && readIndex > 0 && lastByteTimer > PACKET_IDLE_MS) {
+        rxBuffer[readIndex] = '\0';
+        packetReady = true;
+        readIndex = 0;
   }
 
   if (packetReady) {
-
+    Serial.println(rxBuffer);
     //   if (rxBuffer[0] == 's' && sh.pollCommand() == false) {
       
     //     sh.setCommand(rxBuffer); // Sets the command once
@@ -339,97 +413,141 @@ void loop() {
 
     char idChar = rxBuffer[0];
     size_t rxBufferLen = strlen(rxBuffer);
+  
 
     if (idChar == 's') {
-      bool isSequence = (strchr(rxBuffer, '.') != nullptr);
-      switch (isSequence) {
-        case true:
+      // bool isSequence = (strchr(rxBuffer, '.') != nullptr);
 
-        if (sh.pollCommand() == false) {
-          sh.setCommand(rxBuffer);
-          memset(rxBuffer, 0, sizeof(rxBuffer));
-          packetReady = false;
-        }
+      // if (isSequence) {
+      //   if (sh.pollCommand() == false) {
+      //     sh.setCommand(rxBuffer);
+      //     memset(rxBuffer, 0, sizeof(rxBuffer));
+      //     packetReady = false;
+      //   }
+      // }
 
-        break;
+      sh.setCommand(rxBuffer);
+  
 
-        case false:
-
-        if (strlen(rxBuffer) != 3) {
-          memset(rxBuffer, 0, sizeof(rxBuffer));
-          packetReady = false;
-        }
-
-        char channelChar = rxBuffer[1];
-        char stateChar = rxBuffer[2];
-        char end = rxBuffer[3];
-
-        unsigned channel, state;
-
-        if (isxdigit(channelChar) == false || isdigit(stateChar) == false) {
-          memset(rxBuffer, 0, sizeof(rxBuffer));
-          packetReady = false;
-        }
-
-        if (end != '\0') {
-          memset(rxBuffer, 0, sizeof(rxBuffer));
-          packetReady = false;
-        }
-
-        if (channelChar >= '0' && channelChar <= '9') channel = channelChar - '0';
-        else channel = 10 + (toupper(channelChar) - 'A');     // A-F
-
-        state = stateChar - '0';
-
-        if (channel < 1 || channel > 12) {
-          memset(rxBuffer, 0, sizeof(rxBuffer));
-          packetReady = false;
-        }
         
-        if (state != 0 && state != 1) {
-          memset(rxBuffer, 0, sizeof(rxBuffer));
-          packetReady = false;
-        }
+      // else {
+      //   if (strlen(rxBuffer) != 3) {
+      //     memset(rxBuffer, 0, sizeof(rxBuffer));
+      //     packetReady = false;
+      //   }
 
-        digitalWrite(dcChannels[channel - 1], state);
+      //   char channelChar = rxBuffer[1];
+      //   char stateChar = rxBuffer[2];
+      //   char end = rxBuffer[3];
 
-        memset(rxBuffer, 0, sizeof(rxBuffer));
-        packetReady = false;
+      //   unsigned channel, state;
 
-        break;
-      }
+      //   if (isxdigit(channelChar) == false || isdigit(stateChar) == false) {
+      //     memset(rxBuffer, 0, sizeof(rxBuffer));
+      //     packetReady = false;
+      //   }
+
+      //   if (end != '\0') {
+      //     memset(rxBuffer, 0, sizeof(rxBuffer));
+      //     packetReady = false;
+      //   }
+
+      //   if (channelChar >= '0' && channelChar <= '9') channel = channelChar - '0';
+      //   else channel = 10 + (toupper(channelChar) - 'A');     // A-F
+
+      //   state = stateChar - '0';
+
+      //   if (channel < 1 || channel > 12) {
+      //     memset(rxBuffer, 0, sizeof(rxBuffer));
+      //     packetReady = false;
+      //   }
+        
+      //   if (state != 0 && state != 1) {
+      //     memset(rxBuffer, 0, sizeof(rxBuffer));
+      //     packetReady = false;
+      //   }
+
+      //   digitalWrite(dcChannels[channel - 1], state);
+
+      //   memset(rxBuffer, 0, sizeof(rxBuffer));
+      //   packetReady = false;
+
+        
+      // }
+
+    }
+
+    else if (idChar == 'S') {
+
+      char channelChar = rxBuffer[1];
+      char stateChar = rxBuffer[2];
+
+      unsigned channel, state;
+
+      // if (isxdigit(channelChar) == false || isdigit(stateChar) == false) {
+      //   memset(rxBuffer, 0, sizeof(rxBuffer));
+      //   packetReady = false;
+      // }
+
+      // if (end != '\0') {
+      //   memset(rxBuffer, 0, sizeof(rxBuffer));
+      //   packetReady = false;
+      // }
+
+      if (channelChar >= '0' && channelChar <= '9') channel = channelChar - '0';
+      else channel = 10 + (toupper(channelChar) - 'A');     // A-F
+
+      state = stateChar - '0';
+
+      digitalWrite(dcChannels[channel - 1], state);
+
+
 
     }
 
     else if (idChar == 'a') {
       // Arm
-      digitalWrite(PIN_ARM, HIGH);
-      delay(50);
-      digitalWrite(PIN_ARM, LOW);
+      // digitalWrite(PIN_ARM, HIGH);
+      // delay(1000);
+      // digitalWrite(PIN_ARM, LOW);
 
-      Serial.println("Arming...");
+      // Serial.println("Arming...");
+      disarmPulse.cancel();
+      armPulse.start();
 
       // Reset
-      memset(rxBuffer, 0, sizeof(rxBuffer));
-      packetReady = false;
+      // memset(rxBuffer, 0, sizeof(rxBuffer));
+      // packetReady = false;
     }
 
     else if (idChar == 'r') {
       // Disarm
-      digitalWrite(PIN_DISARM, HIGH);
-      delay(50);
-      digitalWrite(PIN_DISARM, LOW);
+      // digitalWrite(PIN_DISARM, HIGH);
+      // delay(1000);
+      // digitalWrite(PIN_DISARM, LOW);
+      armPulse.cancel();
+      disarmPulse.start();
 
-      Serial.println("Reseting...");
+      // Serial.println("Reseting...");
 
       // Reset
-      memset(rxBuffer, 0, sizeof(rxBuffer));
-      packetReady = false;
+      // memset(rxBuffer, 0, sizeof(rxBuffer));
+      // packetReady = false;
     }
 
+    else if (idChar == 'f') {
+      sh.setState(true);
+    }
+
+    memset(rxBuffer, 0, sizeof(rxBuffer));
+    packetReady = false;
   }
-  
+
+
+  armPulse.update();
+  disarmPulse.update();
   sh.update();
+  // UART1.println("Hello World!");
 
   // =========== Data Acquisition ===========
 
@@ -439,33 +557,6 @@ void loop() {
   Bank ptBank = banks[1];
   Bank lctcBank = banks[2];
 
-  Serial.println("===========");
-  for (int i = 0; i < 12; i++) {
-    if (i < 5) {
-      Serial.print("LC Channel ");
-      Serial.print(i + 1);
-      Serial.print(": ");
-      Serial.println(lctcBank.data[i], 3);
-    }
-    else {
-      Serial.print("TC Channel ");
-      Serial.print(i + 1);
-      Serial.print(": ");
-      Serial.println(lctcBank.data[i], 3);
-    }
-  }
-  Serial.println("===========");
-
-  /*
-  Complete Solenoid Status packet format:
-  <Solenoid Packet Identifier>\n
-  <Solenoid Channel #>,<State>,<Current e.g. 0900 = 900mA>\n
-  .
-  .
-  .
-  <Solenoid Channel #>,<State>,<Current>\n
-  <Checksum>
-  */
   
 }
 
