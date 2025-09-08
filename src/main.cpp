@@ -27,6 +27,8 @@
 
 static constexpr int SERIAL_BAUD_RATE = 115200;
 static constexpr int SERIAL_TIMEOUT = 2000;
+static constexpr int DATA_DECIMALS = 5;
+
 static constexpr uint16_t PACKET_IDLE_MS = 100;
 static constexpr uint16_t PULSE_DURATION = 500;
 
@@ -36,6 +38,8 @@ static constexpr uint8_t NUM_DC_CHANNELS = 12;
 static constexpr uint8_t NUM_PT_CHANNELS = 16;
 static constexpr uint8_t NUM_LC_CHANNELS = 6;
 static constexpr uint8_t NUM_TC_CHANNELS = 6;
+
+static constexpr uint8_t PACKET_SIZE = NUM_DC_CHANNELS + NUM_PT_CHANNELS + NUM_LC_CHANNELS + NUM_TC_CHANNELS;
 
 static constexpr int T_MUX_SETTLE_US = 500;
 static constexpr int T_CONV_US = 1000;
@@ -63,6 +67,31 @@ MCP3561 ptADC(SPI_PT_CS, SPI1);
 SequenceHandler sh;
 
 static elapsedMillis armTimer = 0;
+
+bool toCSVRow(const float* data, char identifier, size_t n,
+              char* out, size_t outSize,
+              uint8_t decimals = DATA_DECIMALS) {
+  size_t used = 0;
+
+  for (size_t i = 0; i < n ; ++i) {
+    char digits[32];
+    digits[0] = identifier;                                // scratch for one number
+    dtostrf(data[i], 0, decimals, digits + 1);         // <-- write INTO digits
+    size_t len = strlen(digits);
+
+    // need = number chars + 1 delimiter (',' or '\n') + 1 final '\0' reserve
+    size_t need = len + 1 + 1;
+    if (used + need > outSize) return false;        // prevent overflow
+
+    memcpy(out + used, digits, len);                // append number
+    used += len;
+
+    out[used++] = (i + 1 < n) ? ',' : '\n';         // delimiter
+  }
+
+  out[used] = '\0';                                  // null-terminate
+  return true;
+}
 
 // ========== State machine ==========
 
@@ -557,6 +586,20 @@ void loop() {
   Bank ptBank = banks[1];
   Bank lctcBank = banks[2];
 
+  // =========== Packet ==========
+
+  char sPacket[512], ptPacket[512], lctcPacket[512];
+  if (toCSVRow(sBank.data,'s', NUM_DC_CHANNELS, sPacket, sizeof(sPacket), 3)) {
+    UART1.print(sPacket);
+  }
+  if (toCSVRow(ptBank.data,'p', NUM_PT_CHANNELS, ptPacket, sizeof(ptPacket), 3)) {
+    UART1.print(ptPacket);
+  }
+  if (toCSVRow(lctcBank.data,'t', NUM_LC_CHANNELS + NUM_TC_CHANNELS, lctcPacket, sizeof(lctcPacket), 3)) {
+    UART1.print(lctcPacket);
+  }
+
+  // Send packet
   
 }
 
