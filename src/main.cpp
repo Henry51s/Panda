@@ -361,6 +361,9 @@ void loop() {
   [Example: S11 turns channel 1 on]
   Solenoid sequence: s<Channel identifier in hex><State>.<Delay after in milliseconds (5 digits)>,... 
   [Example: s11.01000,s10.00000 turns channel 1 on for 1000ms, then turns channel 1 off]
+
+  "S" = Command
+  "s" = Sequence
   */
 
   static char rxBuffer[128] = {0}; // Keep buffer between calls
@@ -587,6 +590,19 @@ void loop() {
   Bank lctcBank = banks[2];
 
   // =========== Packet ==========
+
+  /*
+  
+  Format: <Identifier letter><Data>,...
+
+  Solenoid packet: s<Solenoid Current Data>
+  PT packet: p<PT Current Data>
+  TC and LC packet: t<TC and LC Voltage Data>
+
+  TC and LC data is combined into one packet; the first 6 entries are LC, the last 6 are TC
+  Packet length depends on decimal places defined in DATA_DECIMALS (Currently 5). All entries have the same decimal place. Each packet is sent separately
+  
+  */
 
   char sPacket[512], ptPacket[512], lctcPacket[512];
   if (toCSVRow(sBank.data,'s', NUM_DC_CHANNELS, sPacket, sizeof(sPacket), 3)) {
