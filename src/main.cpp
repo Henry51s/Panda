@@ -25,9 +25,12 @@
 #define R_CS_S 0.1f // Solenoid current sense resistance
 #define R_CS_PT 47.f // PT current sense resistance
 
+// static constexpr int BB_OVER_HYSTERESIS_MS = 500; 
+// static constexpr int BB_UNDER_HYSTERESIS_MS = 500;
+
 static constexpr int SERIAL_BAUD_RATE = 115200;
 static constexpr int SERIAL_TIMEOUT = 2000;
-static constexpr int DATA_DECIMALS = 5;
+static constexpr int DATA_DECIMALS = 7;
 
 static constexpr uint16_t PACKET_IDLE_MS = 100;
 static constexpr uint16_t PULSE_DURATION = 500;
@@ -235,6 +238,66 @@ struct Pulse {
     }
 
 };
+
+struct BangBangController {
+  private:
+
+  bool isActive = false;
+  double currentPressure = 0, targetPressure = 0; // Make sure units are consistent
+  double lowerDeadband = 0, upperDeadband = 0; // Make sure units are consistent
+
+  bool valveState = false;
+
+  bool overPressure = currentPressure > (targetPressure + upperDeadband);
+  bool underPressure = currentPressure < (targetPressure - lowerDeadband);
+
+  // elapsedMillis timer = 0;
+  // bool inHysteresis = false;
+  // bool isOver = false;
+  // bool isUnder = true;
+
+  public: 
+
+  // Persistance - low pass filter w/ time constant as parameter
+
+  void setState(bool state) {
+    isActive = state;
+  }
+
+  void setTargetPressure(double target) {
+    targetPressure = target;
+  }
+
+  void setCurrentPressure(double current) {
+    currentPressure = current;
+  }
+
+  void setDeadbands(int upper, int lower) {
+    upperDeadband = upper;
+    lowerDeadband = lower;
+  }
+
+  bool determineValveState() {
+
+    // Based SpaceX logic
+    if (!isActive) {
+        return false;
+    }
+    if (overPressure) {
+        valveState = false;
+    }
+    else if (underPressure) {
+        valveState = true;
+    }
+
+    // else valveState = true;
+
+    return valveState;
+
+  }
+};
+
+
 
 // ADCMuxSystem sSystem(sMux, sADC);
 // ADCMuxSystem ptSystem(ptMux, ptADC);
@@ -592,7 +655,7 @@ void loop() {
   // =========== Packet ==========
 
   /*
-  
+
   Format: <Identifier letter><Data>,...
 
   Solenoid packet: s<Solenoid Current Data>
@@ -605,13 +668,13 @@ void loop() {
   */
 
   char sPacket[512], ptPacket[512], lctcPacket[512];
-  if (toCSVRow(sBank.data,'s', NUM_DC_CHANNELS, sPacket, sizeof(sPacket), 3)) {
+  if (toCSVRow(sBank.data,'s', NUM_DC_CHANNELS, sPacket, sizeof(sPacket), DATA_DECIMALS)) {
     UART1.print(sPacket);
   }
-  if (toCSVRow(ptBank.data,'p', NUM_PT_CHANNELS, ptPacket, sizeof(ptPacket), 3)) {
+  if (toCSVRow(ptBank.data,'p', NUM_PT_CHANNELS, ptPacket, sizeof(ptPacket), DATA_DECIMALS)) {
     UART1.print(ptPacket);
   }
-  if (toCSVRow(lctcBank.data,'t', NUM_LC_CHANNELS + NUM_TC_CHANNELS, lctcPacket, sizeof(lctcPacket), 3)) {
+  if (toCSVRow(lctcBank.data,'t', NUM_LC_CHANNELS + NUM_TC_CHANNELS, lctcPacket, sizeof(lctcPacket), DATA_DECIMALS)) {
     UART1.print(lctcPacket);
   }
 
