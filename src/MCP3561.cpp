@@ -1,6 +1,5 @@
 #include "MCP3561.hpp"
 #include <SPI.h> // Assuming this is needed for SPISettings and SPI object
-// #include <Arduino.h> // For Serial.println and delay
 
 
 MCP3561::MCP3561(uint8_t chip_select, SPIClass& spi_bus)

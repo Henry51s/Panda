@@ -3,6 +3,10 @@
  * The MCP3561 uses SPI mode 0,0.
  * This should be turned into a class so that it's simpler to use.
  */
+
+ // Driver header file for the MCP3561 ADC
+
+ // Header file guard
 #pragma once
 
 #include <SPI.h>

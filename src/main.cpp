@@ -3,13 +3,41 @@
 #include "SequenceHandler.hpp"
 #include <Wire.h>
 #include "MCP3561.hpp" // ADC
-// #include "Mux.hpp"
+#include "BangBangController.hpp"
+/* 
+TODO:
+- Replace while(Serial.available()) with non-blocking reads
+- Clean up SPI and ADC initialization
+- Implement Bang-Bang controllers
+- Add channel state to data packet
+- Implement telemetry on/off control
+
+*/
+
+static constexpr BangBangConfig bbconfig = { //Test config
+  .lowerDeadband = 0.1, // Make sure units are consistent
+  .upperDeadband = 0.1, // Make sure units are consistent
+  .minOnTime = 500,
+  .minOffTime = 500
+};
+
+struct ADCPins {
+  uint8_t irq, cs, mosi, miso, sck;
+};
+
+struct UARTPins {
+  uint8_t rx, tx;
+};
+
+static constexpr UARTPins UART1Pins = {8, 7};
 
 // Arming pins
-#define PIN_ARM 32
-#define PIN_DISARM 33
+static constexpr int PIN_ARM = 32;
+static constexpr int PIN_DISARM = 33;
 
 // Solenoid current ADC SPI pins
+static constexpr ADCPins sADCPins = {9, 10, 11, 12, 13};
+
 #define SPI_S_IRQ 9
 #define SPI_S_CS 10
 #define SPI_S_MOSI 11
@@ -17,16 +45,20 @@
 #define SPI_S_SCK 13
 
 // PT ADC SPI pins
+static constexpr ADCPins ptADCPins = {2, 0, 26, 1, 27};
+
 #define SPI_PT_IRQ 2
 #define SPI_PT_CS 0
 #define SPI_PT_MOSI 26
 #define SPI_PT_MISO 1
 #define SPI_PT_SCK 27
-#define R_CS_S 0.1f // Solenoid current sense resistance
-#define R_CS_PT 47.f // PT current sense resistance
+// #define R_CS_S 0.1f // Solenoid current sense resistance
+// #define R_CS_PT 47.f // PT current sense resistance
 
 // static constexpr int BB_OVER_HYSTERESIS_MS = 500; 
 // static constexpr int BB_UNDER_HYSTERESIS_MS = 500;
+
+static const SPISettings SPISettingsDefault(20000000, MSBFIRST, SPI_MODE0);
 
 static constexpr int SERIAL_BAUD_RATE = 115200;
 static constexpr int SERIAL_TIMEOUT = 2000;
@@ -47,19 +79,19 @@ static constexpr uint8_t PACKET_SIZE = NUM_DC_CHANNELS + NUM_PT_CHANNELS + NUM_L
 static constexpr int T_MUX_SETTLE_US = 500;
 static constexpr int T_CONV_US = 1000;
 
-static constexpr bool SERIAL_DEBUG_S = true;
-static constexpr bool SERIAL_DEBUG_F = true;
+// static constexpr bool SERIAL_DEBUG_S = true;
+// static constexpr bool SERIAL_DEBUG_F = true;
 
-const uint8_t ptMux[4] = {31, 30, 29, 28}; // Mux pins for PTs
-const uint8_t lctcMux[4] = {3, 4, 6, 5}; // Mux pins for both LCs and TCs
+static constexpr uint8_t ptMux[4] = {31, 30, 29, 28}; // Mux pins for PTs
+static constexpr const uint8_t lctcMux[4] = {3, 4, 6, 5}; // Mux pins for both LCs and TCs
+static constexpr const uint8_t sMux[4] = {18, 19, 23, 22}; // Solenoid current mux pins
 
 // DC Channel pins. In order of channels 1 to 12
-const uint8_t dcChannels[12] = {34, 35, 36, 37, 38, 39, 40, 41, 17, 16, 15, 14};
-// Solenoid current mux pins
-const uint8_t sMux[4] = {18, 19, 23, 22};
+static constexpr const uint8_t dcChannels[12] = {34, 35, 36, 37, 38, 39, 40, 41, 17, 16, 15, 14};
+
 
 // Cursed UART pin config
-FlexSerial UART1(8, 7);
+FlexSerial UART1(UART1Pins.rx, UART1Pins.tx); // RX, TX
 
 // Ability to turn on and off telemetry
 bool sendState = false;
@@ -73,7 +105,7 @@ static elapsedMillis armTimer = 0;
 
 bool toCSVRow(const float* data, char identifier, size_t n,
               char* out, size_t outSize,
-              uint8_t decimals = DATA_DECIMALS) {
+              uint8_t decimals = DATA_DECIMALS) { // Generates a CSV row from an array of floats for serial transmission
   size_t used = 0;
 
   for (size_t i = 0; i < n ; ++i) {
@@ -239,64 +271,6 @@ struct Pulse {
 
 };
 
-struct BangBangController {
-  private:
-
-  bool isActive = false;
-  double currentPressure = 0, targetPressure = 0; // Make sure units are consistent
-  double lowerDeadband = 0, upperDeadband = 0; // Make sure units are consistent
-
-  bool valveState = false;
-
-  bool overPressure = currentPressure > (targetPressure + upperDeadband);
-  bool underPressure = currentPressure < (targetPressure - lowerDeadband);
-
-  // elapsedMillis timer = 0;
-  // bool inHysteresis = false;
-  // bool isOver = false;
-  // bool isUnder = true;
-
-  public: 
-
-  // Persistance - low pass filter w/ time constant as parameter
-
-  void setState(bool state) {
-    isActive = state;
-  }
-
-  void setTargetPressure(double target) {
-    targetPressure = target;
-  }
-
-  void setCurrentPressure(double current) {
-    currentPressure = current;
-  }
-
-  void setDeadbands(int upper, int lower) {
-    upperDeadband = upper;
-    lowerDeadband = lower;
-  }
-
-  bool determineValveState() {
-
-    // Based SpaceX logic
-    if (!isActive) {
-        return false;
-    }
-    if (overPressure) {
-        valveState = false;
-    }
-    else if (underPressure) {
-        valveState = true;
-    }
-
-    // else valveState = true;
-
-    return valveState;
-
-  }
-};
-
 
 
 // ADCMuxSystem sSystem(sMux, sADC);
@@ -320,10 +294,6 @@ void setup() {
   delay(50);
   digitalWrite(PIN_DISARM, LOW);
 
-  // digitalWrite(PIN_ARM, HIGH);
-  // delay(50);
-  // digitalWrite(PIN_ARM, LOW);
-
   for (int i = 0; i < 12; i++) {
     pinMode(dcChannels[i], OUTPUT);
   }
@@ -331,11 +301,6 @@ void setup() {
   for (int i = 0; i < 4; i++) {
     pinMode(sMux[i], OUTPUT);
   }
-
-  // digitalWrite(sMux[0], HIGH);
-  // digitalWrite(sMux[1], HIGH);
-  // digitalWrite(sMux[2], HIGH);
-  // digitalWrite(sMux[3], LOW);
 
   for (int i = 0; i < 4; i++) {
     pinMode(ptMux[i], OUTPUT);
@@ -366,8 +331,7 @@ void setup() {
   // SPI.setCS(CS_PIN);
   SPI.setSCK(13);
 
-  SPISettings sSettings(20000000, MSBFIRST, SPI_MODE0);
-  sADC.setSettings(sSettings);
+  sADC.setSettings(SPISettingsDefault);
   delay(100);
   sADC.writeRegisterDefaults(); // Called twice to ensure operation after power-cycling
   delay(100);
@@ -385,7 +349,7 @@ void setup() {
   // SPI.setCS(CS_PIN);
   SPI1.setSCK(SPI_PT_SCK);
 
-  ptADC.setSettings(sSettings);
+  ptADC.setSettings(SPISettingsDefault);
   delay(100);
   ptADC.writeRegisterDefaults(); // Called twice to ensure operation after power-cycling
   delay(100);
@@ -396,16 +360,6 @@ void setup() {
   ptADC.setVREF(1.25f);
 
   scanner.setup();
-
-  // sSystem.setup();
-  // ptSystem.setup();
-  // sh.setCommand("s11.01000,s10.02000,sA1.02000,sA0.00010");
-
-  // while(true) {
-  //   delay(500);
-  //   sh.setCommand("s11.00000,s10.00010,sA1.02000,sA0.00010");
-  //   // sh.printCurrentCommand();
-  // }
 
 }
 
@@ -677,9 +631,6 @@ void loop() {
   if (toCSVRow(lctcBank.data,'t', NUM_LC_CHANNELS + NUM_TC_CHANNELS, lctcPacket, sizeof(lctcPacket), DATA_DECIMALS)) {
     UART1.print(lctcPacket);
   }
-
-  // Send packet
-  
 }
 
 // void I2CScanner() {
