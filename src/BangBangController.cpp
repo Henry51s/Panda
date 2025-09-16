@@ -5,8 +5,8 @@ TODO:
 - Implement minimum on/off time logic using elapsedMillis
 - Consider hysteresis handling if needed
 */
-BangBangController::BangBangController(DCChannel& channel_, const BangBangConfig& config_)
-    : config(config_), channel(channel_) {} // All controllers should be initialized after initializing all DC channels
+BangBangController::BangBangController(const BangBangConfig& config_)
+    : config(config_) {} // All controllers should be initialized after initializing all DC channels
 
 void BangBangController::update() {
 
@@ -18,19 +18,16 @@ void BangBangController::update() {
         return;
     }
     if (overPressure) {
-        channel.setState(false);
+        valveState = false;
     }
     else if (underPressure) {
-        channel.setState(true);
+       valveState = true;
     }
-
-    // else valveState = true;
 
 }
 
 void BangBangController::setState(bool state) {
     isActive = state;
-    channel.setControlled(state);
 }
 
 void BangBangController::setCurrentPressure(double current) {currentPressure = current;}

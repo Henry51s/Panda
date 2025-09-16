@@ -3,7 +3,8 @@
 #include "SequenceHandler.hpp"
 #include <Wire.h>
 #include "MCP3561.hpp" // ADC
-#include "BangBangController.hpp"
+// #include "BangBangController.hpp"
+
 /* 
 TODO:
 - Replace while(Serial.available()) with non-blocking reads
@@ -14,12 +15,30 @@ TODO:
 
 */
 
-static constexpr BangBangConfig bbconfig = { //Test config
-  .lowerDeadband = 0.1, // Make sure units are consistent
-  .upperDeadband = 0.1, // Make sure units are consistent
-  .minOnTime = 500,
-  .minOffTime = 500
-};
+// static constexpr BangBangConfig bbconfig = { //Test config
+//   .lowerDeadband = 0.1, // Make sure units are consistent
+//   .upperDeadband = 0.1, // Make sure units are consistent
+//   .minOnTime = 500,
+//   .minOffTime = 500
+// };
+
+// DC Channel pins. In order of channels 1 to 12
+static constexpr uint8_t dcChannels[12] = {34, 35, 36, 37, 38, 39, 40, 41, 17, 16, 15, 14};
+
+// static DCChannel dcChannels[NUM_DC_CHANNELS] = {
+//   DCChannel(dcChannelsPins[0], new BangBangController(bbconfig)),
+//   DCChannel(dcChannelsPins[1], nullptr),
+//   DCChannel(dcChannelsPins[2], nullptr),
+//   DCChannel(dcChannelsPins[3], nullptr),
+//   DCChannel(dcChannelsPins[4], nullptr),
+//   DCChannel(dcChannelsPins[5], nullptr),
+//   DCChannel(dcChannelsPins[6], nullptr),
+//   DCChannel(dcChannelsPins[7], nullptr),
+//   DCChannel(dcChannelsPins[8], nullptr),
+//   DCChannel(dcChannelsPins[9], nullptr),
+//   DCChannel(dcChannelsPins[10], nullptr),
+//   DCChannel(dcChannelsPins[11], nullptr)
+// };
 
 struct ADCPins {
   uint8_t irq, cs, mosi, miso, sck;
@@ -30,44 +49,31 @@ struct UARTPins {
 };
 
 static constexpr UARTPins UART1Pins = {8, 7};
+static constexpr UARTPins UART2Pins = {20, 21};
 
 // Arming pins
-static constexpr int PIN_ARM = 32;
-static constexpr int PIN_DISARM = 33;
+static constexpr uint8_t PIN_ARM = 32;
+static constexpr uint8_t PIN_DISARM = 33;
 
 // Solenoid current ADC SPI pins
 static constexpr ADCPins sADCPins = {9, 10, 11, 12, 13};
 
-#define SPI_S_IRQ 9
-#define SPI_S_CS 10
-#define SPI_S_MOSI 11
-#define SPI_S_MISO 12
-#define SPI_S_SCK 13
-
 // PT ADC SPI pins
 static constexpr ADCPins ptADCPins = {2, 0, 26, 1, 27};
 
-#define SPI_PT_IRQ 2
-#define SPI_PT_CS 0
-#define SPI_PT_MOSI 26
-#define SPI_PT_MISO 1
-#define SPI_PT_SCK 27
-// #define R_CS_S 0.1f // Solenoid current sense resistance
-// #define R_CS_PT 47.f // PT current sense resistance
-
-// static constexpr int BB_OVER_HYSTERESIS_MS = 500; 
-// static constexpr int BB_UNDER_HYSTERESIS_MS = 500;
-
 static const SPISettings SPISettingsDefault(20000000, MSBFIRST, SPI_MODE0);
 
-static constexpr int SERIAL_BAUD_RATE = 115200;
-static constexpr int SERIAL_TIMEOUT = 2000;
-static constexpr int DATA_DECIMALS = 7;
+static constexpr unsigned int SERIAL_BAUD_RATE = 115200;
+static constexpr unsigned int SERIAL_TIMEOUT = 2000;
 
-static constexpr uint16_t PACKET_IDLE_MS = 100;
-static constexpr uint16_t PULSE_DURATION = 500;
+static constexpr unsigned int PACKET_IDLE_MS = 100;
+static constexpr unsigned int PULSE_DURATION = 500;
+
+static constexpr unsigned int T_MUX_SETTLE_US = 100;
+static constexpr unsigned int T_CONV_US = 500;
 
 static constexpr uint8_t NUM_MAX_COMMANDS = 32;
+static constexpr uint8_t DATA_DECIMALS = 7;
 
 static constexpr uint8_t NUM_DC_CHANNELS = 12;
 static constexpr uint8_t NUM_PT_CHANNELS = 16;
@@ -76,32 +82,18 @@ static constexpr uint8_t NUM_TC_CHANNELS = 6;
 
 static constexpr uint8_t PACKET_SIZE = NUM_DC_CHANNELS + NUM_PT_CHANNELS + NUM_LC_CHANNELS + NUM_TC_CHANNELS;
 
-static constexpr int T_MUX_SETTLE_US = 500;
-static constexpr int T_CONV_US = 1000;
-
-// static constexpr bool SERIAL_DEBUG_S = true;
-// static constexpr bool SERIAL_DEBUG_F = true;
-
 static constexpr uint8_t ptMux[4] = {31, 30, 29, 28}; // Mux pins for PTs
-static constexpr const uint8_t lctcMux[4] = {3, 4, 6, 5}; // Mux pins for both LCs and TCs
-static constexpr const uint8_t sMux[4] = {18, 19, 23, 22}; // Solenoid current mux pins
-
-// DC Channel pins. In order of channels 1 to 12
-static constexpr const uint8_t dcChannels[12] = {34, 35, 36, 37, 38, 39, 40, 41, 17, 16, 15, 14};
-
+static constexpr uint8_t lctcMux[4] = {3, 4, 6, 5}; // Mux pins for both LCs and TCs
+static constexpr uint8_t sMux[4] = {18, 19, 23, 22}; // Solenoid current mux pins
 
 // Cursed UART pin config
 FlexSerial UART1(UART1Pins.rx, UART1Pins.tx); // RX, TX
+FlexSerial UART2(UART2Pins.rx, UART2Pins.tx); // RX, TX
 
-// Ability to turn on and off telemetry
-bool sendState = false;
-
-MCP3561 sADC(SPI_S_CS, SPI);
-MCP3561 ptADC(SPI_PT_CS, SPI1);
+MCP3561 sADC(sADCPins.cs, SPI);
+MCP3561 ptADC(ptADCPins.cs, SPI1);
 
 SequenceHandler sh;
-
-static elapsedMillis armTimer = 0;
 
 bool toCSVRow(const float* data, char identifier, size_t n,
               char* out, size_t outSize,
@@ -144,7 +136,7 @@ struct Bank {
   uint8_t numChannel;
 };
 
-static float sData[NUM_DC_CHANNELS] = {0}, ptData[NUM_PT_CHANNELS] = {0}, lctcData[12] = {0};
+static float sData[NUM_DC_CHANNELS] = {0}, ptData[NUM_PT_CHANNELS] = {0}, lctcData[NUM_TC_CHANNELS + NUM_LC_CHANNELS] = {0};
 
 /*
 bank[0] - Solenoid channel current reading
@@ -155,7 +147,7 @@ static constexpr Bank banks[] = {
 
   {sADC, MuxSettings::CH0, sMux, sData, NUM_DC_CHANNELS},
   {ptADC, MuxSettings::CH1, ptMux, ptData, NUM_PT_CHANNELS},
-  {ptADC, MuxSettings::CH0, lctcMux, lctcData, 12}
+  {ptADC, MuxSettings::CH0, lctcMux, lctcData, NUM_TC_CHANNELS + NUM_LC_CHANNELS}
 
 };
 
@@ -272,9 +264,6 @@ struct Pulse {
 };
 
 
-
-// ADCMuxSystem sSystem(sMux, sADC);
-// ADCMuxSystem ptSystem(ptMux, ptADC);
 ADCMuxSystem scanner;
 Pulse armPulse(PIN_ARM);
 Pulse disarmPulse(PIN_DISARM);
@@ -291,10 +280,10 @@ void setup() {
   pinMode(PIN_DISARM, OUTPUT);
 
   digitalWrite(PIN_DISARM, HIGH);
-  delay(50);
+  delay(PULSE_DURATION);
   digitalWrite(PIN_DISARM, LOW);
 
-  for (int i = 0; i < 12; i++) {
+  for (int i = 0; i < NUM_DC_CHANNELS; i++) {
     pinMode(dcChannels[i], OUTPUT);
   }
 
@@ -310,26 +299,25 @@ void setup() {
     digitalWrite(ptMux[i], LOW);
   }
 
-  pinMode(SPI_S_CS, OUTPUT);
-  pinMode(SPI_S_IRQ, INPUT);
-  // pinMode(MCLK_PIN, OUTPUT);
-  pinMode(SPI_S_MISO, INPUT);
-  pinMode(SPI_S_MOSI, OUTPUT);
+  pinMode(sADCPins.cs, OUTPUT);
+  pinMode(sADCPins.irq, INPUT);
 
-  pinMode(SPI_PT_CS, OUTPUT);
-  pinMode(SPI_PT_IRQ, INPUT);
-  // pinMode(MCLK_PIN, OUTPUT);
-  pinMode(SPI_PT_MISO, INPUT);
-  pinMode(SPI_PT_MOSI, OUTPUT);
+  pinMode(sADCPins.miso, INPUT);
+  pinMode(sADCPins.mosi, OUTPUT);
+
+  pinMode(ptADCPins.cs, OUTPUT);
+  pinMode(ptADCPins.irq, INPUT);
+ 
+  pinMode(ptADCPins.miso, INPUT);
+  pinMode(ptADCPins.mosi, OUTPUT);
 
 
   SPI.begin();
   SPI.setClockDivider(4);
   
-  SPI.setMISO(SPI_S_MISO);
-  SPI.setMOSI(SPI_S_MOSI);
-  // SPI.setCS(CS_PIN);
-  SPI.setSCK(13);
+  SPI.setMISO(sADCPins.miso);
+  SPI.setMOSI(sADCPins.mosi);
+  SPI.setSCK(sADCPins.sck);
 
   sADC.setSettings(SPISettingsDefault);
   delay(100);
@@ -344,10 +332,13 @@ void setup() {
   SPI1.begin();
   SPI1.setClockDivider(4);
 
-  SPI1.setMISO(SPI_PT_MISO);
-  SPI1.setMOSI(SPI_PT_MOSI);
+  // SPI1.setMISO(SPI_PT_MISO);
+  // SPI1.setMOSI(SPI_PT_MOSI);
+  SPI1.setMISO(ptADCPins.miso);
+  SPI1.setMOSI(ptADCPins.mosi);
   // SPI.setCS(CS_PIN);
-  SPI1.setSCK(SPI_PT_SCK);
+  // SPI1.setSCK(SPI_PT_SCK);
+  SPI1.setSCK(ptADCPins.sck);
 
   ptADC.setSettings(SPISettingsDefault);
   delay(100);
@@ -395,16 +386,6 @@ void loop() {
       char c = UART1.read();
       lastByteTimer = 0;
 
-      // if (c == '\r') continue;
-      
-      // if (c == '\n') { // End of command
-      //     rxBuffer[readIndex] = '\0'; // Null-terminate string
-      //     packetReady = true; 
-      //     collecting = false;
-      //     readIndex = 0; // Reset for next command
-      //     break;
-      // }
-
       if (c == '\r' || c == '\n') {
         if (readIndex > 0) {
           rxBuffer[readIndex] = '\0';
@@ -426,19 +407,6 @@ void loop() {
         break;
 
       }
-
-        // if (readIndex == 3 && rxBuffer[0] == 's') {
-        //   rxBuffer[3] = '\0';
-        //   packetReady = true;
-        //   readIndex = 0;
-        //   break;
-        // }
-
-      // if (collecting && serialTimer >= SERIAL_TIMEOUT) {
-      //   collecting = false;
-      //   readIndex = 0; // Reset for next comman
-      //   break;
-      // }
       
   }
 
@@ -449,80 +417,15 @@ void loop() {
   }
 
   if (packetReady) {
-    Serial.println(rxBuffer);
-    //   if (rxBuffer[0] == 's' && sh.pollCommand() == false) {
-      
-    //     sh.setCommand(rxBuffer); // Sets the command once
-    //     sh.setState(true);
-
-    //     memset(rxBuffer, 0, sizeof(rxBuffer)); // Resets rxBuffer
-    //     packetReady = false;
-
-    // }
+    // Serial.println(rxBuffer);
 
     char idChar = rxBuffer[0];
     size_t rxBufferLen = strlen(rxBuffer);
   
 
     if (idChar == 's') {
-      // bool isSequence = (strchr(rxBuffer, '.') != nullptr);
-
-      // if (isSequence) {
-      //   if (sh.pollCommand() == false) {
-      //     sh.setCommand(rxBuffer);
-      //     memset(rxBuffer, 0, sizeof(rxBuffer));
-      //     packetReady = false;
-      //   }
-      // }
 
       sh.setCommand(rxBuffer);
-  
-
-        
-      // else {
-      //   if (strlen(rxBuffer) != 3) {
-      //     memset(rxBuffer, 0, sizeof(rxBuffer));
-      //     packetReady = false;
-      //   }
-
-      //   char channelChar = rxBuffer[1];
-      //   char stateChar = rxBuffer[2];
-      //   char end = rxBuffer[3];
-
-      //   unsigned channel, state;
-
-      //   if (isxdigit(channelChar) == false || isdigit(stateChar) == false) {
-      //     memset(rxBuffer, 0, sizeof(rxBuffer));
-      //     packetReady = false;
-      //   }
-
-      //   if (end != '\0') {
-      //     memset(rxBuffer, 0, sizeof(rxBuffer));
-      //     packetReady = false;
-      //   }
-
-      //   if (channelChar >= '0' && channelChar <= '9') channel = channelChar - '0';
-      //   else channel = 10 + (toupper(channelChar) - 'A');     // A-F
-
-      //   state = stateChar - '0';
-
-      //   if (channel < 1 || channel > 12) {
-      //     memset(rxBuffer, 0, sizeof(rxBuffer));
-      //     packetReady = false;
-      //   }
-        
-      //   if (state != 0 && state != 1) {
-      //     memset(rxBuffer, 0, sizeof(rxBuffer));
-      //     packetReady = false;
-      //   }
-
-      //   digitalWrite(dcChannels[channel - 1], state);
-
-      //   memset(rxBuffer, 0, sizeof(rxBuffer));
-      //   packetReady = false;
-
-        
-      // }
 
     }
 
@@ -532,16 +435,6 @@ void loop() {
       char stateChar = rxBuffer[2];
 
       unsigned channel, state;
-
-      // if (isxdigit(channelChar) == false || isdigit(stateChar) == false) {
-      //   memset(rxBuffer, 0, sizeof(rxBuffer));
-      //   packetReady = false;
-      // }
-
-      // if (end != '\0') {
-      //   memset(rxBuffer, 0, sizeof(rxBuffer));
-      //   packetReady = false;
-      // }
 
       if (channelChar >= '0' && channelChar <= '9') channel = channelChar - '0';
       else channel = 10 + (toupper(channelChar) - 'A');     // A-F
@@ -556,32 +449,15 @@ void loop() {
 
     else if (idChar == 'a') {
       // Arm
-      // digitalWrite(PIN_ARM, HIGH);
-      // delay(1000);
-      // digitalWrite(PIN_ARM, LOW);
-
-      // Serial.println("Arming...");
       disarmPulse.cancel();
       armPulse.start();
 
-      // Reset
-      // memset(rxBuffer, 0, sizeof(rxBuffer));
-      // packetReady = false;
     }
 
     else if (idChar == 'r') {
       // Disarm
-      // digitalWrite(PIN_DISARM, HIGH);
-      // delay(1000);
-      // digitalWrite(PIN_DISARM, LOW);
       armPulse.cancel();
       disarmPulse.start();
-
-      // Serial.println("Reseting...");
-
-      // Reset
-      // memset(rxBuffer, 0, sizeof(rxBuffer));
-      // packetReady = false;
     }
 
     else if (idChar == 'f') {
@@ -624,12 +500,15 @@ void loop() {
   char sPacket[512], ptPacket[512], lctcPacket[512];
   if (toCSVRow(sBank.data,'s', NUM_DC_CHANNELS, sPacket, sizeof(sPacket), DATA_DECIMALS)) {
     UART1.print(sPacket);
+    // Serial.println(sPacket);
   }
   if (toCSVRow(ptBank.data,'p', NUM_PT_CHANNELS, ptPacket, sizeof(ptPacket), DATA_DECIMALS)) {
     UART1.print(ptPacket);
+    // Serial.println(ptPacket); 
   }
   if (toCSVRow(lctcBank.data,'t', NUM_LC_CHANNELS + NUM_TC_CHANNELS, lctcPacket, sizeof(lctcPacket), DATA_DECIMALS)) {
     UART1.print(lctcPacket);
+    Serial.println(lctcPacket);
   }
 }
 
