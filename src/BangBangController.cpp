@@ -26,9 +26,8 @@ void BangBangController::update() {
 
 }
 
-void BangBangController::setState(bool state) {
-    isActive = state;
-}
+void BangBangController::setState(bool state) {isActive = state;}
+bool BangBangController::getState(void) {return valveState;}
 
 void BangBangController::setCurrentPressure(double current) {currentPressure = current;}
 void BangBangController::setTargetPressure(double target) {targetPressure = target;}

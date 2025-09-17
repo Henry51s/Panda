@@ -1,5 +1,4 @@
 #pragma once
-// #include "DCChannel.hpp"
 
 struct BangBangConfig {
     const double lowerDeadband = 0; // Make sure units are consistent
@@ -23,6 +22,8 @@ class BangBangController {
     BangBangController(const BangBangConfig& config_); // All controllers should be initialized after initializing all DC channels
 
     void setState(bool state);
+    bool getState(void);
+    
     void setTargetPressure(double target);
     void setCurrentPressure(double current);
 

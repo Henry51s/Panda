@@ -3,91 +3,25 @@
 #include "SequenceHandler.hpp"
 #include <Wire.h>
 #include "MCP3561.hpp" // ADC
+#include "DCChannel.hpp"
+#include "Constants.hpp"
 // #include "BangBangController.hpp"
 
 /* 
 TODO:
 - Replace while(Serial.available()) with non-blocking reads
 - Clean up SPI and ADC initialization
-- Implement Bang-Bang controllers
+- Implement Bang-Bang controllers and DCChannel object *WIP*
 - Add channel state to data packet
 - Implement telemetry on/off control
 
 */
 
-// static constexpr BangBangConfig bbconfig = { //Test config
-//   .lowerDeadband = 0.1, // Make sure units are consistent
-//   .upperDeadband = 0.1, // Make sure units are consistent
-//   .minOnTime = 500,
-//   .minOffTime = 500
-// };
 
-// DC Channel pins. In order of channels 1 to 12
-static constexpr uint8_t dcChannels[12] = {34, 35, 36, 37, 38, 39, 40, 41, 17, 16, 15, 14};
 
-// static DCChannel dcChannels[NUM_DC_CHANNELS] = {
-//   DCChannel(dcChannelsPins[0], new BangBangController(bbconfig)),
-//   DCChannel(dcChannelsPins[1], nullptr),
-//   DCChannel(dcChannelsPins[2], nullptr),
-//   DCChannel(dcChannelsPins[3], nullptr),
-//   DCChannel(dcChannelsPins[4], nullptr),
-//   DCChannel(dcChannelsPins[5], nullptr),
-//   DCChannel(dcChannelsPins[6], nullptr),
-//   DCChannel(dcChannelsPins[7], nullptr),
-//   DCChannel(dcChannelsPins[8], nullptr),
-//   DCChannel(dcChannelsPins[9], nullptr),
-//   DCChannel(dcChannelsPins[10], nullptr),
-//   DCChannel(dcChannelsPins[11], nullptr)
-// };
-
-struct ADCPins {
-  uint8_t irq, cs, mosi, miso, sck;
-};
-
-struct UARTPins {
-  uint8_t rx, tx;
-};
-
-static constexpr UARTPins UART1Pins = {8, 7};
-static constexpr UARTPins UART2Pins = {20, 21};
-
-// Arming pins
-static constexpr uint8_t PIN_ARM = 32;
-static constexpr uint8_t PIN_DISARM = 33;
-
-// Solenoid current ADC SPI pins
-static constexpr ADCPins sADCPins = {9, 10, 11, 12, 13};
-
-// PT ADC SPI pins
-static constexpr ADCPins ptADCPins = {2, 0, 26, 1, 27};
-
-static const SPISettings SPISettingsDefault(20000000, MSBFIRST, SPI_MODE0);
-
-static constexpr unsigned int SERIAL_BAUD_RATE = 115200;
-static constexpr unsigned int SERIAL_TIMEOUT = 2000;
-
-static constexpr unsigned int PACKET_IDLE_MS = 100;
-static constexpr unsigned int PULSE_DURATION = 500;
-
-static constexpr unsigned int T_MUX_SETTLE_US = 100;
-static constexpr unsigned int T_CONV_US = 500;
-
-static constexpr uint8_t NUM_MAX_COMMANDS = 32;
-static constexpr uint8_t DATA_DECIMALS = 7;
-
-static constexpr uint8_t NUM_DC_CHANNELS = 12;
-static constexpr uint8_t NUM_PT_CHANNELS = 16;
-static constexpr uint8_t NUM_LC_CHANNELS = 6;
-static constexpr uint8_t NUM_TC_CHANNELS = 6;
-
-static constexpr uint8_t PACKET_SIZE = NUM_DC_CHANNELS + NUM_PT_CHANNELS + NUM_LC_CHANNELS + NUM_TC_CHANNELS;
-
-static constexpr uint8_t ptMux[4] = {31, 30, 29, 28}; // Mux pins for PTs
-static constexpr uint8_t lctcMux[4] = {3, 4, 6, 5}; // Mux pins for both LCs and TCs
-static constexpr uint8_t sMux[4] = {18, 19, 23, 22}; // Solenoid current mux pins
 
 // Cursed UART pin config
-FlexSerial UART1(UART1Pins.rx, UART1Pins.tx); // RX, TX
+// FlexSerial UART1(UART1Pins.rx, UART1Pins.tx); // RX, TX
 FlexSerial UART2(UART2Pins.rx, UART2Pins.tx); // RX, TX
 
 MCP3561 sADC(sADCPins.cs, SPI);
@@ -270,9 +204,9 @@ Pulse disarmPulse(PIN_DISARM);
 
 void setup() {
   // put your setup code here, to run once:
-  UART1.begin(SERIAL_BAUD_RATE); //RS-485 bus 1
-  UART1.setTimeout(100);
-  // Serial.begin(SERIAL_BAUD_RATE); // Debugging via serial monitor
+  Serial2.begin(SERIAL_BAUD_RATE); //RS-485 bus 1
+  Serial2.setTimeout(100);
+  Serial.begin(SERIAL_BAUD_RATE); // Debugging via serial monitor
   Wire2.begin();
   // I2CScanner();
 
@@ -284,7 +218,7 @@ void setup() {
   digitalWrite(PIN_DISARM, LOW);
 
   for (int i = 0; i < NUM_DC_CHANNELS; i++) {
-    pinMode(dcChannels[i], OUTPUT);
+    pinMode(PINS_DC_CHANNELS[i], OUTPUT);
   }
 
   for (int i = 0; i < 4; i++) {
@@ -382,8 +316,8 @@ void loop() {
   // static bool collecting = true;
   static bool packetReady = false;
 
-  while (UART1.available() > 0) {
-      char c = UART1.read();
+  while (Serial2.available() > 0) {
+      char c = Serial2.read();
       lastByteTimer = 0;
 
       if (c == '\r' || c == '\n') {
@@ -441,7 +375,10 @@ void loop() {
 
       state = stateChar - '0';
 
-      digitalWrite(dcChannels[channel - 1], state);
+      // digitalWrite(dcChannels[channel - 1], state);
+      if (channel >= 1 && channel <= NUM_DC_CHANNELS) {
+        dcChannels[channel - 1].setState(state);
+      }
 
 
 
@@ -482,6 +419,25 @@ void loop() {
   Bank ptBank = banks[1];
   Bank lctcBank = banks[2];
 
+  // =========== Bang-Bang Control ==========
+
+ /*
+ Manually update each BangBangController here. For example,
+ testController.update(<Some PT from ptBank>);
+
+ ** These PT channels and DC Channels are hard-coded. DO NOT SWITCH ANY BANG BANG PT/VALVE CONNECTORS ON THE BOARD **
+ */
+
+  // // Update all BangBangControllers
+  // for (int i = 0; i < NUM_DC_CHANNELS; i++) {
+  //   BangBangController* controllerPtr = dcChannels[i].getControllerPtr();
+  //   if (controllerPtr != nullptr) {
+  //     controllerPtr->update();
+  //     bool newState = controllerPtr->getState();
+  //     dcChannels[i].setState(newState);
+  //   }
+  // }
+
   // =========== Packet ==========
 
   /*
@@ -499,16 +455,16 @@ void loop() {
 
   char sPacket[512], ptPacket[512], lctcPacket[512];
   if (toCSVRow(sBank.data,'s', NUM_DC_CHANNELS, sPacket, sizeof(sPacket), DATA_DECIMALS)) {
-    UART1.print(sPacket);
+    // Serial2.println(sPacket);
     // Serial.println(sPacket);
   }
   if (toCSVRow(ptBank.data,'p', NUM_PT_CHANNELS, ptPacket, sizeof(ptPacket), DATA_DECIMALS)) {
-    UART1.print(ptPacket);
+    // Serial2.println(ptPacket);
     // Serial.println(ptPacket); 
   }
   if (toCSVRow(lctcBank.data,'t', NUM_LC_CHANNELS + NUM_TC_CHANNELS, lctcPacket, sizeof(lctcPacket), DATA_DECIMALS)) {
-    UART1.print(lctcPacket);
-    Serial.println(lctcPacket);
+    //  Serial2.println(lctcPacket);
+    //  Serial.println(lctcPacket);
   }
 }
 
