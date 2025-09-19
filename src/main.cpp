@@ -29,6 +29,8 @@ MCP3561 ptADC(ptADCPins.cs, SPI1);
 
 SequenceHandler sh;
 
+// ========== Telemetry Functions =========
+
 bool toCSVRow(const float* data, char identifier, size_t n,
               char* out, size_t outSize,
               uint8_t decimals = DATA_DECIMALS) { // Generates a CSV row from an array of floats for serial transmission
@@ -52,6 +54,59 @@ bool toCSVRow(const float* data, char identifier, size_t n,
 
   out[used] = '\0';                                  // null-terminate
   return true;
+}
+
+// Stores in "out" the hex representation of value (4 hex digits, uppercase). outSize must be at least 5 (4 digits + null terminator)
+void toHexBits(const int value, uint8_t* out) {
+  // if (value > 0xFFFF) {
+  //   // Error: value too large or output buffer too small
+  //   if (outSize > 0) out[0] = '\0'; // Ensure out is null-terminated
+  //   return;
+  // }
+
+  uint16_t v = value & 0xFFFF;
+  out[0] = (uint8_t) ((value >> 8) & 0xFF);
+  out[1] = (uint8_t) (value & 0xFF);
+
+  // snprintf(out, outSize, "%02X%02X", hi, lo);
+  // snprintf(out, outSize, "%04X", v);
+}
+
+size_t generatePacket(uint8_t* out, const size_t outSize, const float* data, const size_t dataSize, const char identifier, const uint8_t decimals = 4) {
+  /*
+  Packet format: <Identifier><Data 1><Data 2><...><Data dataSize><\n>
+  Each data is represented by 4 hex digits (2 bytes)
+  Example: s0A0B0C0D0E0F101112131415161718191A1B1C1D1E1F20\n
+  where 's' is the identifier, and 0A0B is the hex representation of the first data point, 0C0D is the second, etc.
+  */
+  out[0] = (uint8_t) identifier;
+  size_t position = 1; // Starting at one after identifier
+
+  for (size_t i = 0; i < dataSize; i++) {
+    // uint8_t temp[5]; // Temporary buffer for each data point (4 hex digits + null terminator)
+    int dataTruncated = (int) (data[i] * pow(10, decimals)); // Truncate float to integer based on decimals (Example: 0.12345 becomes 1234)
+    toHexBits(dataTruncated, (uint8_t*) (out + position));
+    position += 2; // Move position by 2 bytes (4 hex digits);
+
+
+
+    // for (int j = 0; j < 4; j++) {
+    //   if (position < outSize - 1) { // Ensure we don't overflow the output buffer
+    //     out[position++] = temp[j];
+    //   } else {
+    //     // Buffer overflow, handle error as needed
+    //     break;
+    //   }
+    // }
+  }
+
+  // for (size_t i = 0; i < dataSize; i++) {
+
+  // }
+
+  out[position++] = '\n'; //\n at the end
+  // out[position] = '\0'; // Null-terminate the string
+  return position; // Return the length of the generated packet
 }
 
 // ========== State machine ==========
@@ -202,6 +257,8 @@ ADCMuxSystem scanner;
 Pulse armPulse(PIN_ARM);
 Pulse disarmPulse(PIN_DISARM);
 
+elapsedMicros serialTimer;
+
 void setup() {
   // put your setup code here, to run once:
   Serial2.begin(SERIAL_BAUD_RATE); //RS-485 bus 1
@@ -344,6 +401,8 @@ void loop() {
       
   }
 
+  // Serial.println(rxBuffer);
+
   if (!packetReady && readIndex > 0 && lastByteTimer > PACKET_IDLE_MS) {
         rxBuffer[readIndex] = '\0';
         packetReady = true;
@@ -441,7 +500,7 @@ void loop() {
   // =========== Packet ==========
 
   /*
-
+  *DEPRECATED* - Use generatePacket() instead for better performance and flexibility
   Format: <Identifier letter><Data>,...
 
   Solenoid packet: s<Solenoid Current Data>
@@ -453,19 +512,54 @@ void loop() {
   
   */
 
+  /*
+  *CURRENT*
+
+  Packet format: <Identifier><Data 1><Data 2><...><Data dataSize><\n>
+  Each data is represented by 4 hex digits (2 bytes)
+  Example: s0A0B0C0D0E0F101112131415161718191A1B1C1D1E1F20\n
+  where 's' is the identifier, and 0A0B is the hex representation of the first data point, 0C0D is the second, etc.
+  */
+
   char sPacket[512], ptPacket[512], lctcPacket[512];
-  if (toCSVRow(sBank.data,'s', NUM_DC_CHANNELS, sPacket, sizeof(sPacket), DATA_DECIMALS)) {
-    // Serial2.println(sPacket);
-    // Serial.println(sPacket);
+  // if (toCSVRow(sBank.data,'s', NUM_DC_CHANNELS, sPacket, sizeof(sPacket), DATA_DECIMALS)) {
+  //   // Serial2.println(sPacket);
+  //   // Serial.println(sPacket);
+  // }
+  // if (toCSVRow(ptBank.data,'p', NUM_PT_CHANNELS, ptPacket, sizeof(ptPacket), DATA_DECIMALS)) {
+  //   // Serial2.println(ptPacket);
+  //   // Serial.println(ptPacket); 
+  // }
+  // if (toCSVRow(lctcBank.data,'t', NUM_LC_CHANNELS + NUM_TC_CHANNELS, lctcPacket, sizeof(lctcPacket), DATA_DECIMALS)) {
+  //   //  Serial2.println(lctcPacket);
+  //   //  Serial.println(lctcPacket);
+  // }
+
+  toCSVRow(sBank.data,'s', NUM_DC_CHANNELS, sPacket, sizeof(sPacket), DATA_DECIMALS);
+  toCSVRow(ptBank.data,'p', NUM_PT_CHANNELS, ptPacket, sizeof(ptPacket), DATA_DECIMALS);
+  toCSVRow(lctcBank.data,'t', NUM_LC_CHANNELS + NUM_TC_CHANNELS, lctcPacket, sizeof(lctcPacket), DATA_DECIMALS);
+
+  // size_t sPacketLen = generatePacket(sPacket, sizeof(sPacket), sBank.data, NUM_DC_CHANNELS, 's', DATA_DECIMALS);
+  // size_t ptPacketLen = generatePacket(ptPacket, sizeof(ptPacket), ptBank.data, NUM_PT_CHANNELS, 'p', DATA_DECIMALS);
+  // size_t lctcPacketLen = generatePacket(lctcPacket, sizeof(lctcPacket), lctcBank.data, NUM_LC_CHANNELS + NUM_TC_CHANNELS, 't', DATA_DECIMALS);
+
+
+  if (serialTimer > SERIAL_WRITE_DELAY) {
+
+    int currentTime = serialTimer;
+    // ========== Printing packets ==========
+    Serial2.print(sPacket);
+    Serial2.print(ptPacket);
+    Serial2.print(lctcPacket);
+    // Serial2.write(ptPacket, ptPacketLen);
+    // ==========
+    Serial.println("Transmission time: " + String(serialTimer - currentTime) + "us");
+    serialTimer = 0;
+
   }
-  if (toCSVRow(ptBank.data,'p', NUM_PT_CHANNELS, ptPacket, sizeof(ptPacket), DATA_DECIMALS)) {
-    // Serial2.println(ptPacket);
-    // Serial.println(ptPacket); 
-  }
-  if (toCSVRow(lctcBank.data,'t', NUM_LC_CHANNELS + NUM_TC_CHANNELS, lctcPacket, sizeof(lctcPacket), DATA_DECIMALS)) {
-    //  Serial2.println(lctcPacket);
-    //  Serial.println(lctcPacket);
-  }
+
+ 
+ 
 }
 
 // void I2CScanner() {

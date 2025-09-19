@@ -40,14 +40,15 @@ static constexpr unsigned int T_CONV_US = 1000;
 
 // =================== Serial configurations ================= //
 
-static constexpr unsigned int SERIAL_BAUD_RATE = 460800;
+static constexpr unsigned int SERIAL_BAUD_RATE = 115200;
 static constexpr unsigned int SERIAL_TIMEOUT = 2000;
+static constexpr unsigned int SERIAL_WRITE_DELAY = 100000; // Microseconds to wait between writes to prevent overwhelming the serial bus
 
 static constexpr unsigned int PACKET_IDLE_MS = 100;
 static constexpr unsigned int PULSE_DURATION = 500;
 
 static constexpr uint8_t NUM_MAX_COMMANDS = 32;
-static constexpr uint8_t DATA_DECIMALS = 4;
+static constexpr uint8_t DATA_DECIMALS = 4; // Number of decimal places in telemetry data
 
 static constexpr uint8_t NUM_DC_CHANNELS = 12;
 static constexpr uint8_t NUM_PT_CHANNELS = 16;
