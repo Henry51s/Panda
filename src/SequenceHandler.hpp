@@ -1,14 +1,11 @@
 #include <elapsedMillis.h>
+#include "DCChannel.hpp"
 
 #define MAX_NUM_COMMANDS 32
 
 class SequenceHandler {
 
     public:
-
-    int solenoidChannels[MAX_NUM_COMMANDS];
-    int solenoidStates[MAX_NUM_COMMANDS];
-    int solenoidDelays[MAX_NUM_COMMANDS];
 
     void update(void);
     void setCommand(char* command);
@@ -21,13 +18,19 @@ class SequenceHandler {
     private:
 
     elapsedMillis sTimer;
+
+
+
     int currentIndex;
-
     int numCommands;
-
-    private:
 
     bool isActive = false;
     bool inDelay = false;
+
+    DCChannel* dcchannels;
+
+    int solenoidChannels[MAX_NUM_COMMANDS];
+    int solenoidStates[MAX_NUM_COMMANDS];
+    int solenoidDelays[MAX_NUM_COMMANDS];
 
 };

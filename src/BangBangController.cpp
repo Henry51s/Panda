@@ -3,7 +3,7 @@
 /*
 TODO:
 - Implement minimum on/off time logic using elapsedMillis
-- Consider hysteresis handling if needed
+- Persistance/Hysteresis logic
 */
 BangBangController::BangBangController(const BangBangConfig& config_)
     : config(config_) {} // All controllers should be initialized after initializing all DC channels
@@ -12,6 +12,7 @@ void BangBangController::update() {
 
     bool overPressure = currentPressure > (targetPressure + config.upperDeadband);
     bool underPressure = currentPressure < (targetPressure - config.lowerDeadband);
+    bool insideDeadband = !overPressure && !underPressure;
 
     // Based SpaceX logic
     if (!isActive) {
@@ -23,6 +24,7 @@ void BangBangController::update() {
     else if (underPressure) {
        valveState = true;
     }
+
 
 }
 

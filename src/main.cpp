@@ -14,6 +14,7 @@ TODO:
 - Implement Bang-Bang controllers and DCChannel object *WIP*
 - Add channel state to data packet
 - Implement telemetry on/off control
+- Rewrite SequenceHandler to use dcChannels array
 
 */
 
@@ -363,6 +364,10 @@ void loop() {
 
   "S" = Command
   "s" = Sequence
+
+  Bang-Bang control commands:
+  Setting pressure target: b<Channel in hex><Target pressure in PSI>
+  Enabling Bang-Bang control: B<Channel in hex><Target pressure in PSI><State (1 or 0)>
   */
 
   static char rxBuffer[128] = {0}; // Keep buffer between calls
@@ -487,15 +492,15 @@ void loop() {
  ** These PT channels and DC Channels are hard-coded. DO NOT SWITCH ANY BANG BANG PT/VALVE CONNECTORS ON THE BOARD **
  */
 
-  // // Update all BangBangControllers
-  // for (int i = 0; i < NUM_DC_CHANNELS; i++) {
-  //   BangBangController* controllerPtr = dcChannels[i].getControllerPtr();
-  //   if (controllerPtr != nullptr) {
-  //     controllerPtr->update();
-  //     bool newState = controllerPtr->getState();
-  //     dcChannels[i].setState(newState);
-  //   }
-  // }
+  // Update all BangBangControllers
+  for (int i = 0; i < NUM_DC_CHANNELS; i++) {
+    BangBangController* controllerPtr = dcChannels[i].getControllerPtr();
+    if (controllerPtr != nullptr) {
+      controllerPtr->update();
+      bool newState = controllerPtr->getState();
+      dcChannels[i].setState(newState);
+    }
+  }
 
   // =========== Packet ==========
 

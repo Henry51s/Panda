@@ -139,7 +139,7 @@ void SequenceHandler::setState(bool sequenceState) {
 // TODO: Solenoid delays is shifted right 1
 void SequenceHandler::update() {
 
-    uint8_t dcChannels[12] = {34, 35, 36, 37, 38, 39, 40, 41, 17, 16, 15, 14};
+    // uint8_t dcChannels[12] = {34, 35, 36, 37, 38, 39, 40, 41, 17, 16, 15, 14};
 
     // No commands and not firing
     if (numCommands == 0 || isActive == false) {
@@ -148,18 +148,19 @@ void SequenceHandler::update() {
     }
 
     if (inDelay == false) {
-        digitalWrite(dcChannels[solenoidChannels[currentIndex] - 1], solenoidStates[currentIndex]);
+        // digitalWrite(dcChannels[solenoidChannels[currentIndex] - 1], solenoidStates[currentIndex]);
+        dcchannels[solenoidChannels[currentIndex] - 1].setState(solenoidStates[currentIndex]);
 
-        Serial.print("Firing idx=");
-        Serial.print(currentIndex);
-        Serial.print(" chan=");
-        Serial.print(solenoidChannels[currentIndex]);
-        Serial.print(" pin=");
-        Serial.print(dcChannels[solenoidChannels[currentIndex] - 1]);
-        Serial.print(" state=");
-        Serial.println(solenoidStates[currentIndex]);
-        Serial.print(" duration=");
-        Serial.println(solenoidDelays[currentIndex]);
+        // Serial.print("Firing idx=");
+        // Serial.print(currentIndex);
+        // Serial.print(" chan=");
+        // Serial.print(solenoidChannels[currentIndex]);
+        // Serial.print(" pin=");
+        // Serial.print(dcChannels[solenoidChannels[currentIndex] - 1]);
+        // Serial.print(" state=");
+        // Serial.println(solenoidStates[currentIndex]);
+        // Serial.print(" duration=");
+        // Serial.println(solenoidDelays[currentIndex]);
 
         sTimer = 0;
         inDelay = true;
@@ -172,7 +173,7 @@ void SequenceHandler::update() {
         if (currentIndex >= numCommands) {
             currentIndex = 0;
             isActive = false;
-            Serial.println("Sequence complete");
+            // Serial.println("Sequence complete");
             resetCommand();
         }
     }

@@ -60,11 +60,11 @@ static constexpr uint8_t PACKET_SIZE = NUM_DC_CHANNELS + NUM_PT_CHANNELS + NUM_L
 // =================== BangBangControllers configurations ================= //
 
 // Manually declare bang-bang controllers here if needed
-BangBangController testController({.lowerDeadband = 2.0, .upperDeadband = 3.0, .minOnTime = 500, .minOffTime = 500});
+BangBangController testController({.lowerDeadband = 2.0, .upperDeadband = 3.0, .overHysMs = 500, .underHysMs = 500});
 
 // nullptr means no BangBangController associated with the DCChannel (BangBangControllers are hard wired per channel)
 static DCChannel dcChannels[NUM_DC_CHANNELS] = {
-  DCChannel(PINS_DC_CHANNELS[0], nullptr),
+  DCChannel(PINS_DC_CHANNELS[0], &testController),
   DCChannel(PINS_DC_CHANNELS[1], nullptr),
   DCChannel(PINS_DC_CHANNELS[2], nullptr),
   DCChannel(PINS_DC_CHANNELS[3], nullptr),
