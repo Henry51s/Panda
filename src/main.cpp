@@ -352,6 +352,7 @@ void loop() {
   // ========== Serial IO/Solenoid Sequence and command handling ==========
 
   /*
+  
   Single-letter commands:
   'a' - Arm
   'r' - Safe
@@ -367,7 +368,8 @@ void loop() {
 
   Bang-Bang control commands:
   Setting pressure target: b<Channel in hex><Target pressure in PSI>
-  Enabling Bang-Bang control: B<Channel in hex><Target pressure in PSI><State (1 or 0)>
+  Enabling Bang-Bang control: B<Channel in hex><State (1 or 0)>
+
   */
 
   static char rxBuffer[128] = {0}; // Keep buffer between calls
@@ -444,8 +446,6 @@ void loop() {
         dcChannels[channel - 1].setState(state);
       }
 
-
-
     }
 
     else if (idChar == 'a') {
@@ -463,6 +463,51 @@ void loop() {
 
     else if (idChar == 'f') {
       sh.setState(true);
+    }
+
+    else if (idChar == 'b') {
+      // Set Bang-Bang target pressure
+      char channelChar = rxBuffer[1];
+      char* pressureStr = rxBuffer + 2;
+
+      unsigned channel;
+      double targetPressure;
+
+      if (channelChar >= '0' && channelChar <= '9') channel = channelChar - '0';
+      else channel = 10 + (toupper(channelChar) - 'A');     // A-F
+
+      targetPressure = atof(pressureStr);
+
+      if (channel >= 0 && channel < NUM_DC_CHANNELS) {
+        BangBangController* controllerPtr = dcChannels[channel - 1].getControllerPtr();
+        if (controllerPtr != nullptr) {
+          controllerPtr->setTargetPressure(targetPressure);
+        }
+      }
+
+      memset(rxBuffer, 0, sizeof(rxBuffer));
+      packetReady = false;
+
+    }
+
+    else if (idChar == 'B') {
+      // Enable/Disable Bang-Bang control
+      char channelChar = rxBuffer[1];
+      char stateChar = rxBuffer[rxBufferLen - 1];
+
+      unsigned channel, state;
+
+      if (channelChar >= '0' && channelChar <= '9') channel = channelChar - '0';
+      else channel = 10 + (toupper(channelChar) - 'A');     // A-F
+
+      state = stateChar - '0';
+
+      if (channel > 0 && channel < NUM_DC_CHANNELS) {
+        BangBangController* controllerPtr = dcChannels[channel].getControllerPtr();
+        if (controllerPtr != nullptr) {
+          controllerPtr->setState(state);
+        }
+      }
     }
 
     memset(rxBuffer, 0, sizeof(rxBuffer));
