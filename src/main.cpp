@@ -5,21 +5,41 @@
 #include "MCP3561.hpp" // ADC
 #include "DCChannel.hpp"
 #include "Constants.hpp"
+#include <SD.h>
 // #include "BangBangController.hpp"
 
 /* 
 TODO:
 - Replace while(Serial.available()) with non-blocking reads
 - Clean up SPI and ADC initialization
-- Implement Bang-Bang controllers and DCChannel object *WIP*
+- Implement Bang-Bang controllers and DCChannel object *NOT BEING IMPLEMENTED 10/7/2025*
 - Add channel state to data packet
 - Implement telemetry on/off control
 - Rewrite SequenceHandler to use dcChannels array
+- Overhaul telemetry
+- Parallelize ADC readings
 
 */
 
-
-
+/**
+ * SERIAL PROTOCOL (Baud rate: 115200)
+ * 
+ * Command Format:
+ * 'a' - Arm
+ * 'd' - Disarm
+ * 's<Channel Identifier in Hex><State>.<Five digit delay in milliseconds>' - Solenoid Sequence
+ * 'S<Channel Identifier in Hex><State>' - Solenoid command
+ * 
+ * 'B'<Channel Identifier in Hex><State> - Bang-Bang channel activation/deactivation
+ * 'b'<Channel Identifier in Hex>.<Lower Deadband in raw voltage>.<Upper Deadband in raw voltage>.<Min off time in milliseconds>.<Min on time in milliseconds>
+ * 
+ * Telemetry Format:
+ * 'p<Voltage across shunt resistor>' x16 - Pressure Transducer Packet
+ * 's<Voltage across shunt resistor>' x12 - Solenoid Current Packet
+ * 't<Conditioned thermocouple voltage>' x6 - Thermocouple Voltage Packet
+ * 'l<Conditioned load cell voltage>' x6 - Load Cell Voltage Packet
+ * 
+ */
 
 // Cursed UART pin config
 // FlexSerial UART1(UART1Pins.rx, UART1Pins.tx); // RX, TX
@@ -57,60 +77,8 @@ bool toCSVRow(const float* data, char identifier, size_t n,
   return true;
 }
 
-// Stores in "out" the hex representation of value (4 hex digits, uppercase). outSize must be at least 5 (4 digits + null terminator)
-void toHexBits(const int value, uint8_t* out) {
-  // if (value > 0xFFFF) {
-  //   // Error: value too large or output buffer too small
-  //   if (outSize > 0) out[0] = '\0'; // Ensure out is null-terminated
-  //   return;
-  // }
 
-  uint16_t v = value & 0xFFFF;
-  out[0] = (uint8_t) ((value >> 8) & 0xFF);
-  out[1] = (uint8_t) (value & 0xFF);
-
-  // snprintf(out, outSize, "%02X%02X", hi, lo);
-  // snprintf(out, outSize, "%04X", v);
-}
-
-size_t generatePacket(uint8_t* out, const size_t outSize, const float* data, const size_t dataSize, const char identifier, const uint8_t decimals = 4) {
-  /*
-  Packet format: <Identifier><Data 1><Data 2><...><Data dataSize><\n>
-  Each data is represented by 4 hex digits (2 bytes)
-  Example: s0A0B0C0D0E0F101112131415161718191A1B1C1D1E1F20\n
-  where 's' is the identifier, and 0A0B is the hex representation of the first data point, 0C0D is the second, etc.
-  */
-  out[0] = (uint8_t) identifier;
-  size_t position = 1; // Starting at one after identifier
-
-  for (size_t i = 0; i < dataSize; i++) {
-    // uint8_t temp[5]; // Temporary buffer for each data point (4 hex digits + null terminator)
-    int dataTruncated = (int) (data[i] * pow(10, decimals)); // Truncate float to integer based on decimals (Example: 0.12345 becomes 1234)
-    toHexBits(dataTruncated, (uint8_t*) (out + position));
-    position += 2; // Move position by 2 bytes (4 hex digits);
-
-
-
-    // for (int j = 0; j < 4; j++) {
-    //   if (position < outSize - 1) { // Ensure we don't overflow the output buffer
-    //     out[position++] = temp[j];
-    //   } else {
-    //     // Buffer overflow, handle error as needed
-    //     break;
-    //   }
-    // }
-  }
-
-  // for (size_t i = 0; i < dataSize; i++) {
-
-  // }
-
-  out[position++] = '\n'; //\n at the end
-  // out[position] = '\0'; // Null-terminate the string
-  return position; // Return the length of the generated packet
-}
-
-// ========== State machine ==========
+// // ========== State machine ==========
 
 enum State : uint8_t {
   IDLE,
@@ -142,6 +110,10 @@ static constexpr Bank banks[] = {
 };
 
 static constexpr uint8_t NUM_BANKS = sizeof(banks) / sizeof(banks[0]);
+
+Bank sBank = {sADC, MuxSettings::CH0, sMux, sData, NUM_DC_CHANNELS};
+Bank ptBank = {ptADC, MuxSettings::CH1, ptMux, ptData, NUM_PT_CHANNELS};
+Bank lctcBank = {ptADC, MuxSettings::CH0, lctcMux, lctcData, NUM_TC_CHANNELS + NUM_LC_CHANNELS};
 
 struct ADCMuxSystem {
 
@@ -220,6 +192,8 @@ struct ADCMuxSystem {
   }
 };
 
+
+
 // Handling non-blocking pulses for arming and safing
 struct Pulse {
 
@@ -254,16 +228,20 @@ struct Pulse {
 };
 
 
-ADCMuxSystem scanner;
+// ADCMuxSystem scanner;
 Pulse armPulse(PIN_ARM);
 Pulse disarmPulse(PIN_DISARM);
 
 elapsedMicros serialTimer;
 
+ADCMuxSystem scanner;
+
 void setup() {
   // put your setup code here, to run once:
   Serial2.begin(SERIAL_BAUD_RATE); //RS-485 bus 1
   Serial2.setTimeout(100);
+  static uint8_t buf[300];
+  Serial2.addMemoryForWrite(buf, sizeof(buf));
   Serial.begin(SERIAL_BAUD_RATE); // Debugging via serial monitor
   Wire2.begin();
   // I2CScanner();
@@ -344,33 +322,11 @@ void setup() {
 
   scanner.setup();
 
+
 }
 
 void loop() {
   // put your main code here, to run repeatedly:
-
-  // ========== Serial IO/Solenoid Sequence and command handling ==========
-
-  /*
-  
-  Single-letter commands:
-  'a' - Arm
-  'r' - Safe
-  'f' - Fire active sequence
-
-  Solenoid command: S<Channel identifier in hex><State (1 or 0)> 
-  [Example: S11 turns channel 1 on]
-  Solenoid sequence: s<Channel identifier in hex><State>.<Delay after in milliseconds (5 digits)>,... 
-  [Example: s11.01000,s10.00000 turns channel 1 on for 1000ms, then turns channel 1 off]
-
-  "S" = Command
-  "s" = Sequence
-
-  Bang-Bang control commands:
-  Setting pressure target: b<Channel in hex><Target pressure in PSI>
-  Enabling Bang-Bang control: B<Channel in hex><State (1 or 0)>
-
-  */
 
   static char rxBuffer[128] = {0}; // Keep buffer between calls
   static uint8_t readIndex = 0;    // Keep track of how full
@@ -444,6 +400,7 @@ void loop() {
       // digitalWrite(dcChannels[channel - 1], state);
       if (channel >= 1 && channel <= NUM_DC_CHANNELS) {
         dcChannels[channel - 1].setState(state);
+        Serial.print("Channel: "); Serial.print(channel - 1); Serial.print(" | State: "); Serial.println(state);
       }
 
     }
@@ -465,49 +422,86 @@ void loop() {
       sh.setState(true);
     }
 
-    else if (idChar == 'b') {
-      // Set Bang-Bang target pressure
+    else if (idChar == 'B') {
+
       char channelChar = rxBuffer[1];
-      char* pressureStr = rxBuffer + 2;
+      char stateChar = rxBuffer[2];
 
-      unsigned channel;
-      double targetPressure;
+      unsigned state = stateChar - '0';
 
-      if (channelChar >= '0' && channelChar <= '9') channel = channelChar - '0';
-      else channel = 10 + (toupper(channelChar) - 'A');     // A-F
-
-      targetPressure = atof(pressureStr);
-
-      if (channel >= 0 && channel < NUM_DC_CHANNELS) {
-        BangBangController* controllerPtr = dcChannels[channel - 1].getControllerPtr();
-        if (controllerPtr != nullptr) {
-          controllerPtr->setTargetPressure(targetPressure);
-        }
+      if (channelChar == '1') {
+        dcChannels[10].getControllerPtr()->setState(state);
       }
 
-      memset(rxBuffer, 0, sizeof(rxBuffer));
-      packetReady = false;
+      if (channelChar == '2') {
+        dcChannels[11].getControllerPtr()->setState(state);
+      }
+
 
     }
 
-    else if (idChar == 'B') {
-      // Enable/Disable Bang-Bang control
-      char channelChar = rxBuffer[1];
-      char stateChar = rxBuffer[rxBufferLen - 1];
+    else if (idChar == 'b') {
+      // Configuring bang bang deadbands and minimum actuation times
+      double channelRx = 0;
+      double targetPVRx = 0;
+      double upperDeadbandRx = 0;
+      double lowerDeadbandRx = 0;
+      double minOffTimeRx = 0;
+      double minOnTimeRx = 0;
 
-      unsigned channel, state;
+      char* token = strtok(rxBuffer, ",");
 
-      if (channelChar >= '0' && channelChar <= '9') channel = channelChar - '0';
-      else channel = 10 + (toupper(channelChar) - 'A');     // A-F
+      if (token && sscanf(token + 1, "%i.%5u.%5u.%5u.%5u.%5u", &channelRx, &targetPVRx, &lowerDeadbandRx, &upperDeadbandRx, &minOffTimeRx, &minOnTimeRx) == 6) {
 
-      state = stateChar - '0';
+        if (channelRx == 1) {
 
-      if (channel > 0 && channel < NUM_DC_CHANNELS) {
-        BangBangController* controllerPtr = dcChannels[channel].getControllerPtr();
-        if (controllerPtr != nullptr) {
-          controllerPtr->setState(state);
+          dcChannels[10].getControllerPtr()->setTargetPV(targetPVRx);
+          dcChannels[10].getControllerPtr()->setLowerDeadband(lowerDeadbandRx);
+          dcChannels[10].getControllerPtr()->setUpperDeadband(upperDeadbandRx);
+          dcChannels[10].getControllerPtr()->setMinOffTime(minOffTimeRx);
+          dcChannels[10].getControllerPtr()->setMinOnTime(minOnTimeRx);
+
+          Serial.println("Received Fuel BB configuration: ");
+          Serial.print("Target Pressure, raw value: ");
+          Serial.println(targetPVRx);
+          Serial.print("Lower deadband, raw value: ");
+          Serial.println(lowerDeadbandRx);
+          Serial.print("Upper deadband, raw value: ");
+          Serial.println(upperDeadbandRx);
+          Serial.print("Min off time: ");
+          Serial.println(minOffTimeRx);
+          Serial.print("Min on time: ");
+          Serial.println(minOnTimeRx);
+
         }
-      }
+
+        if (channelRx == 2) {
+
+          dcChannels[11].getControllerPtr()->setTargetPV(targetPVRx);
+          dcChannels[11].getControllerPtr()->setLowerDeadband(lowerDeadbandRx);
+          dcChannels[11].getControllerPtr()->setUpperDeadband(upperDeadbandRx);
+          dcChannels[11].getControllerPtr()->setMinOffTime(minOffTimeRx);
+          dcChannels[11].getControllerPtr()->setMinOnTime(minOnTimeRx);
+
+          Serial.println("Received LOX BB configuration: ");
+          Serial.print("Target Pressure, raw value: ");
+          Serial.println(targetPVRx);
+          Serial.print("Lower deadband, raw value: ");
+          Serial.println(lowerDeadbandRx);
+          Serial.print("Upper deadband, raw value: ");
+          Serial.println(upperDeadbandRx);
+          Serial.print("Min off time: ");
+          Serial.println(minOffTimeRx);
+          Serial.print("Min on time: ");
+          Serial.println(minOnTimeRx);
+
+        }
+
+
+
+       }
+
+
     }
 
     memset(rxBuffer, 0, sizeof(rxBuffer));
@@ -518,81 +512,26 @@ void loop() {
   armPulse.update();
   disarmPulse.update();
   sh.update();
-  // UART1.println("Hello World!");
+
+  for (int i = 0; i < 12; i++) {
+    if (dcChannels[i].getControllerPtr() != nullptr) {
+      if (i == 10) {
+        dcChannels[i].getControllerPtr()->updateController(ptBank.data[14]);
+      }
+      else if (i == 11)
+        dcChannels[i].getControllerPtr()->updateController(ptBank.data[15]);
+    }
+  }
 
   // =========== Data Acquisition ===========
 
   scanner.update();
-  
-  Bank sBank = banks[0];
-  Bank ptBank = banks[1];
-  Bank lctcBank = banks[2];
-
-  // =========== Bang-Bang Control ==========
-
- /*
- Manually update each BangBangController here. For example,
- testController.update(<Some PT from ptBank>);
-
- ** These PT channels and DC Channels are hard-coded. DO NOT SWITCH ANY BANG BANG PT/VALVE CONNECTORS ON THE BOARD **
- */
-
-  // Update all BangBangControllers
-  for (int i = 0; i < NUM_DC_CHANNELS; i++) {
-    BangBangController* controllerPtr = dcChannels[i].getControllerPtr();
-    if (controllerPtr != nullptr) {
-      controllerPtr->update();
-      bool newState = controllerPtr->getState();
-      dcChannels[i].setState(newState);
-    }
-  }
-
-  // =========== Packet ==========
-
-  /*
-  *DEPRECATED* - Use generatePacket() instead for better performance and flexibility
-  Format: <Identifier letter><Data>,...
-
-  Solenoid packet: s<Solenoid Current Data>
-  PT packet: p<PT Current Data>
-  TC and LC packet: t<TC and LC Voltage Data>
-
-  TC and LC data is combined into one packet; the first 6 entries are LC, the last 6 are TC
-  Packet length depends on decimal places defined in DATA_DECIMALS (Currently 5). All entries have the same decimal place. Each packet is sent separately
-  
-  */
-
-  /*
-  *CURRENT*
-
-  Packet format: <Identifier><Data 1><Data 2><...><Data dataSize><\n>
-  Each data is represented by 4 hex digits (2 bytes)
-  Example: s0A0B0C0D0E0F101112131415161718191A1B1C1D1E1F20\n
-  where 's' is the identifier, and 0A0B is the hex representation of the first data point, 0C0D is the second, etc.
-  */
 
   char sPacket[512], ptPacket[512], lctcPacket[512];
-  // if (toCSVRow(sBank.data,'s', NUM_DC_CHANNELS, sPacket, sizeof(sPacket), DATA_DECIMALS)) {
-  //   // Serial2.println(sPacket);
-  //   // Serial.println(sPacket);
-  // }
-  // if (toCSVRow(ptBank.data,'p', NUM_PT_CHANNELS, ptPacket, sizeof(ptPacket), DATA_DECIMALS)) {
-  //   // Serial2.println(ptPacket);
-  //   // Serial.println(ptPacket); 
-  // }
-  // if (toCSVRow(lctcBank.data,'t', NUM_LC_CHANNELS + NUM_TC_CHANNELS, lctcPacket, sizeof(lctcPacket), DATA_DECIMALS)) {
-  //   //  Serial2.println(lctcPacket);
-  //   //  Serial.println(lctcPacket);
-  // }
 
   toCSVRow(sBank.data,'s', NUM_DC_CHANNELS, sPacket, sizeof(sPacket), DATA_DECIMALS);
   toCSVRow(ptBank.data,'p', NUM_PT_CHANNELS, ptPacket, sizeof(ptPacket), DATA_DECIMALS);
   toCSVRow(lctcBank.data,'t', NUM_LC_CHANNELS + NUM_TC_CHANNELS, lctcPacket, sizeof(lctcPacket), DATA_DECIMALS);
-
-  // size_t sPacketLen = generatePacket(sPacket, sizeof(sPacket), sBank.data, NUM_DC_CHANNELS, 's', DATA_DECIMALS);
-  // size_t ptPacketLen = generatePacket(ptPacket, sizeof(ptPacket), ptBank.data, NUM_PT_CHANNELS, 'p', DATA_DECIMALS);
-  // size_t lctcPacketLen = generatePacket(lctcPacket, sizeof(lctcPacket), lctcBank.data, NUM_LC_CHANNELS + NUM_TC_CHANNELS, 't', DATA_DECIMALS);
-
 
   if (serialTimer > SERIAL_WRITE_DELAY) {
 
@@ -603,7 +542,9 @@ void loop() {
     Serial2.print(lctcPacket);
     // Serial2.write(ptPacket, ptPacketLen);
     // ==========
-    Serial.println("Transmission time: " + String(serialTimer - currentTime) + "us");
+    // Serial.println("Transmission time: " + String(serialTimer - currentTime) + "us");
+    // Serial.println(Serial.availableForWrite());
+    // Serial.println(ptPacket);
     serialTimer = 0;
 
   }
@@ -611,17 +552,5 @@ void loop() {
  
  
 }
-
-// void I2CScanner() {
-//   for (uint8_t i = 0; i < 127; i++) {
-//     Wire2.beginTransmission(i);
-//     if (Wire2.endTransmission() == 0) {
-//       Serial.print("Device at Address: 0x");
-//       Serial.print(i, HEX);
-//       Serial.print("\n");
-//     }
-//   }
-// }
-
 
 

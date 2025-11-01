@@ -58,13 +58,21 @@ static constexpr uint8_t NUM_TC_CHANNELS = 6;
 static constexpr uint8_t PACKET_SIZE = NUM_DC_CHANNELS + NUM_PT_CHANNELS + NUM_LC_CHANNELS + NUM_TC_CHANNELS;
 
 // =================== BangBangControllers configurations ================= //
+/**
+ * BangBang pressures will be hardcoded, deadbands and target pressures will be set in real time. Each PT and solenoid slot is hard-wired.
+ * BB Channel 1: Fuel-side slow press (controllerFuel)
+ * BB Channel 2: LOX-side slow press (controllerLOX)
+ */
+
+// static constexpr double BBPTShuntResistor[4] = {47.2, 47.1, 46.9, 47.1}; // Nominal value should be 47 ohms, actual values are 5% off
 
 // Manually declare bang-bang controllers here if needed
-BangBangController testController({.lowerDeadband = 2.0, .upperDeadband = 3.0, .overHysMs = 500, .underHysMs = 500});
+BangBangController controllerFuel(0, 0, 0, 0);
+BangBangController controllerLOX(0, 0, 0, 0);
 
 // nullptr means no BangBangController associated with the DCChannel (BangBangControllers are hard wired per channel)
 static DCChannel dcChannels[NUM_DC_CHANNELS] = {
-  DCChannel(PINS_DC_CHANNELS[0], &testController),
+  DCChannel(PINS_DC_CHANNELS[0], nullptr),
   DCChannel(PINS_DC_CHANNELS[1], nullptr),
   DCChannel(PINS_DC_CHANNELS[2], nullptr),
   DCChannel(PINS_DC_CHANNELS[3], nullptr),
@@ -74,6 +82,6 @@ static DCChannel dcChannels[NUM_DC_CHANNELS] = {
   DCChannel(PINS_DC_CHANNELS[7], nullptr),
   DCChannel(PINS_DC_CHANNELS[8], nullptr),
   DCChannel(PINS_DC_CHANNELS[9], nullptr),
-  DCChannel(PINS_DC_CHANNELS[10], nullptr),
-  DCChannel(PINS_DC_CHANNELS[11], nullptr)
+  DCChannel(PINS_DC_CHANNELS[10], &controllerFuel),
+  DCChannel(PINS_DC_CHANNELS[11], &controllerLOX)
 };

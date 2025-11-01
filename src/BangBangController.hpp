@@ -2,22 +2,17 @@
 // #include <Arduino.h>
 #include "elapsedMillis.h"
 
-struct BangBangConfig {
-    const double lowerDeadband = 0; // Make sure units are consistent
-    const double upperDeadband = 0; // Make sure units are consistent
-    // const double minOnTime = 0;
-    // const double minOffTime = 0;
-    const double overHysMs = 10; // Time to remain on after exceeding upper deadband
-    const double underHysMs = 10; // Time to remain off after going below lower deadband
-};
-
 class BangBangController {
     private:
 
-    const BangBangConfig config;
+    double lowerDeadband = 0;
+    double upperDeadband = 0;
+
+    double minOffTime = 0;
+    double minOnTime = 0;
 
     bool isActive = false;
-    double currentPressure = 0, targetPressure = 0; // Make sure units are consistent
+    double currentPV = 0, targetPV = 0; // Make sure units are consistent
     bool valveState = false;
     // bool inHys = false;
 
@@ -25,14 +20,19 @@ class BangBangController {
 
     public: 
 
-    BangBangController(const BangBangConfig& config_); // All controllers should be initialized after initializing all DC channels
+    BangBangController(double lowerDeadband_, double upperDeadband_, double minOffTime_, double minOnTime_); // All controllers should be initialized after initializing all DC channels
 
     void setState(bool state);
     bool getState(void);
     
-    void setTargetPressure(double target);
-    void setCurrentPressure(double current);
+    void setTargetPV(double targetPV_);
+    void updateController(double currentPV_);
+    void requestState(bool desiredState);
 
-    void update(void);
+    void setUpperDeadband(double upperDeadband_);
+    void setLowerDeadband(double lowerDeadband_);
+
+    void setMinOffTime(double minOffTime_);
+    void setMinOnTime(double minOnTime_);
 
 };

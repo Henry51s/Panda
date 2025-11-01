@@ -5,24 +5,28 @@ TODO:
 - Implement minimum on/off time logic using elapsedMillis
 - Persistance/Hysteresis logic
 */
-BangBangController::BangBangController(const BangBangConfig& config_)
-    : config(config_) {} // All controllers should be initialized after initializing all DC channels
+BangBangController::BangBangController(double lowerDeadband_, double upperDeadband_, double minOffTime_, double minOnTime_) {
+    lowerDeadband = lowerDeadband_;
+    upperDeadband = upperDeadband_;
+    minOffTime = minOffTime_;
+    minOnTime = minOnTime_;
+}
 
-void BangBangController::update() {
+void BangBangController::updateController(double currentPV ) {
 
-    bool overPressure = currentPressure > (targetPressure + config.upperDeadband);
-    bool underPressure = currentPressure < (targetPressure - config.lowerDeadband);
-    bool insideDeadband = !overPressure && !underPressure;
+    bool over = currentPV > (targetPV + upperDeadband);
+    bool under = currentPV < (targetPV - lowerDeadband);
+    bool insideDeadband = !over && !under;
 
     // Based SpaceX logic
     if (!isActive) {
         return;
     }
-    if (overPressure) {
-        valveState = false;
+    if (over) {
+        requestState(false);
     }
-    else if (underPressure) {
-       valveState = true;
+    else if (under) {
+       requestState(true);
     }
 
 
@@ -31,6 +35,22 @@ void BangBangController::update() {
 void BangBangController::setState(bool state) {isActive = state;}
 bool BangBangController::getState(void) {return valveState;}
 
-void BangBangController::setCurrentPressure(double current) {currentPressure = current;}
-void BangBangController::setTargetPressure(double target) {targetPressure = target;}
+void BangBangController::setTargetPV(double targetPV_) {targetPV = targetPV_;}
+
+void BangBangController::setLowerDeadband(double lowerDeadband_) {lowerDeadband = lowerDeadband_;}
+void BangBangController::setUpperDeadband(double upperDeadband_) {upperDeadband = upperDeadband_;}
+
+void BangBangController::requestState(bool desiredState) {
+    if (desiredState == valveState) return;  // already in desired state
+
+    const uint32_t required_ms = valveState ? minOnTime : minOffTime;
+    if (timer >= required_ms) {
+        valveState = desiredState;
+        timer = 0;              // reset timer at each transition
+    }
+}
+
+void BangBangController::setMinOffTime(double minOffTime_) {minOffTime = minOffTime_;}
+void BangBangController::setMinOnTime(double minOnTime_) {minOnTime = minOnTime_;}
+
 
