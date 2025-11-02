@@ -43,11 +43,11 @@
 #define CONFIG2_ADDR 0x03
 
 #define CONFIG3_ADDR 0x04
-#define CONFIG3_DEFAULT 0b10100000 // (In order of register settings: one-shot, 8-bit sign + 24-bit data, everything else default)
+#define CONFIG3_DEFAULT 0b10000000 // (In order of register settings: one-shot, 8-bit sign + 24-bit data, everything else default)
 #define CONFIG3_WRITE (CONFIG3_ADDR << COMMAND_ADDR_POS) | WRITE_COMMAND
-#define CONFIG3_CONV_MODE_POS 6
-#define CONFIG3_CONV_MODE_CONTINUOUS 0b11 << CONFIG3_CONV_MODE_POS
-#define CONFIG3_CONV_MODE_ONESHOT (0b10 << CONFIG3_CONV_MODE_POS)
+// #define CONFIG3_CONV_MODE_POS 6
+// #define CONFIG3_CONV_MODE_CONTINUOUS 0b11 << CONFIG3_CONV_MODE_POS
+// #define CONFIG3_CONV_MODE_ONESHOT (0b10 << CONFIG3_CONV_MODE_POS)
 
 #define IRQ_ADDR 0x05
 #define IRQ_WRITE (IRQ_ADDR << COMMAND_ADDR_POS) | WRITE_COMMAND

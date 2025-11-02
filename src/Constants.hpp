@@ -36,7 +36,7 @@ static constexpr uint8_t PINS_DC_CHANNELS[12] = {34, 35, 36, 37, 38, 39, 40, 41,
 
 static const SPISettings SPISettingsDefault(20000000, MSBFIRST, SPI_MODE0);
 static constexpr unsigned int T_MUX_SETTLE_US = 500;
-static constexpr unsigned int T_CONV_US = 1000;
+static constexpr unsigned int T_CONV_US = 100000;
 
 // =================== Serial configurations ================= //
 

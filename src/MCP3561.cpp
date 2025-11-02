@@ -168,15 +168,16 @@ void MCP3561::writeRegisterDefaults(void) {
   // data_byte = CONFIG3_CONV_MODE_ONESHOT;
   data_byte = CONFIG3_DEFAULT;
   writeRegister(CONFIG3_ADDR, data_byte);
+
   // digitalWrite(chip_select_pin, LOW);
   // spi.transfer(command_byte);
   // spi.transfer(data_byte);
   // digitalWrite(chip_select_pin, HIGH);
 
   // Next, write to the IRQ register to enable a conversion to trigger an interrupt.
-  command_byte = IRQ_WRITE;
-  data_byte = IRQ_MODE_HIGH;
-  writeRegister(IRQ_ADDR, data_byte);
+  // command_byte = IRQ_WRITE;
+  // data_byte = IRQ_MODE_HIGH;
+  // writeRegister(IRQ_ADDR, data_byte);
   // digitalWrite(chip_select_pin, LOW);
   // spi.transfer(command_byte);
   // spi.transfer(data_byte);
@@ -196,13 +197,13 @@ void MCP3561::writeRegisterDefaults(void) {
 
 
 
-float MCP3561::getOutput() {
+ float MCP3561::getOutput() {
   // 1) pull the data off the bus
   spi.beginTransaction(spi_setting);
   digitalWrite(chip_select_pin, LOW);
   spi.transfer(SREAD_DATA_COMMAND);
   // uint8_t status = spi.transfer(0);
-  uint8_t sgn = spi.transfer(0);
+  // uint8_t sgn = spi.transfer(0);
   uint8_t b0 = spi.transfer(0);  // MSB
   uint8_t b1 = spi.transfer(0);
   uint8_t b2 = spi.transfer(0);  // LSB
@@ -218,27 +219,29 @@ float MCP3561::getOutput() {
   // int32_t value = (raw24 & 0x800000)
   //               ? int32_t(raw24 | 0xFF000000)
   //               : int32_t(raw24);
-  int32_t value = raw24;
 
-  if (sgn == 0b0) {value *= 1;}
-  else if (sgn == 0b1) {value *= -1;}
+  // if (sgn == 0b0) {value *= 1;}
+  // else if (sgn == 0b1) {value *= -1;}
   
-  Serial.print("Raw bytes: 0x");
-  if (b0 < 0x10) Serial.print('0');
-  Serial.print(b0, HEX);
-  Serial.print(" 0x");
-  if (b1 < 0x10) Serial.print('0');
-  Serial.print(b1, HEX);
-  Serial.print(" 0x");
-  if (b2 < 0x10) Serial.print('0');
-  Serial.print(b2, HEX);
-  Serial.println();
-  Serial.print(sgn, BIN);
-  Serial.println();
-  Serial.print("Signed value: ");
-  Serial.println(value);
+  // Serial.print("Raw bytes: 0x");
+  // if (b0 < 0x10) Serial.print('0');
+  // Serial.print(b0, HEX);
+  // Serial.print(" 0x");
+  // if (b1 < 0x10) Serial.print('0');
+  // Serial.print(b1, HEX);
+  // Serial.print(" 0x");
+  // if (b2 < 0x10) Serial.print('0');
+  // Serial.print(b2, HEX);
+  // Serial.println();
+  // Serial.print("Raw value: ");
+  // Serial.println(raw24);
 
-  return value * vref / 8388608.0f;
+  // Serial.print("Sign value: ");
+  // Serial.println(sgn, HEX);
+
+  // return raw24;
+  // return (raw24 & 0x800000) ? int32_t(raw24 | 0xFF000000) : int32_t(raw24);
+  return (float(raw24) / 8388608.0f) * vref;
 }
 
 void MCP3561::readAllRegisters(void) {

@@ -55,7 +55,7 @@ SequenceHandler sh;
 bool toCSVRow(const float* data, char identifier, size_t n,
               char* out, size_t outSize,
               uint8_t decimals = DATA_DECIMALS) { // Generates a CSV row from an array of floats for serial transmission
-  size_t used = 0;
+  size_t used = 0; 
 
   for (size_t i = 0; i < n ; ++i) {
     char digits[32];
@@ -92,6 +92,7 @@ struct Bank {
   const uint8_t* muxPins;
   float* data;
   uint8_t numChannel;
+  uint8_t irqPin;
 };
 
 static float sData[NUM_DC_CHANNELS] = {0}, ptData[NUM_PT_CHANNELS] = {0}, lctcData[NUM_TC_CHANNELS + NUM_LC_CHANNELS] = {0};
@@ -103,17 +104,17 @@ bank[2] - LC & TC channel reading (LC and TC data arrays are combined because th
 */
 static constexpr Bank banks[] = {
 
-  {sADC, MuxSettings::CH0, sMux, sData, NUM_DC_CHANNELS},
-  {ptADC, MuxSettings::CH1, ptMux, ptData, NUM_PT_CHANNELS},
-  {ptADC, MuxSettings::CH0, lctcMux, lctcData, NUM_TC_CHANNELS + NUM_LC_CHANNELS}
+  {sADC, MuxSettings::CH0, sMux, sData, NUM_DC_CHANNELS, 9},
+  {ptADC, MuxSettings::CH1, ptMux, ptData, NUM_PT_CHANNELS, 2},
+  {ptADC, MuxSettings::CH0, lctcMux, lctcData, NUM_TC_CHANNELS + NUM_LC_CHANNELS, 2}
 
 };
 
 static constexpr uint8_t NUM_BANKS = sizeof(banks) / sizeof(banks[0]);
 
-Bank sBank = {sADC, MuxSettings::CH0, sMux, sData, NUM_DC_CHANNELS};
-Bank ptBank = {ptADC, MuxSettings::CH1, ptMux, ptData, NUM_PT_CHANNELS};
-Bank lctcBank = {ptADC, MuxSettings::CH0, lctcMux, lctcData, NUM_TC_CHANNELS + NUM_LC_CHANNELS};
+// Bank sBank = {sADC, MuxSettings::CH0, sMux, sData, NUM_DC_CHANNELS};
+// Bank ptBank = {ptADC, MuxSettings::CH1, ptMux, ptData, NUM_PT_CHANNELS};
+// Bank lctcBank = {ptADC, MuxSettings::CH0, lctcMux, lctcData, NUM_TC_CHANNELS + NUM_LC_CHANNELS};
 
 struct ADCMuxSystem {
 
@@ -136,6 +137,7 @@ struct ADCMuxSystem {
         pinMode(b.muxPins[i], OUTPUT);
         digitalWrite(b.muxPins[i], LOW);
       }
+        pinMode(b.irqPin, INPUT);
     }
   }
 
@@ -169,11 +171,30 @@ struct ADCMuxSystem {
         // wait for T_CONV_US, then read the ADC output into the respective samples index
         // Increment channel (If it's at 15, wrap back to zero, then we have a full sample array and we're good to process)
         // return to IDLE
-        if (timer >= T_CONV_US) {
+        if (timer >= T_CONV_US || digitalRead(currentBank.irqPin) == LOW) {
           // Read ADC output
           // Set samples[channel] to what the ADC outputs
           float res = currentBank.adc.getOutput();
           currentBank.data[channel] = res;
+
+          if (bank == 0) {
+            Serial.print("S Channel: ");
+            Serial.print(channel + 1);
+            Serial.print(" | Raw: ");
+            Serial.println(res, HEX);
+          }
+          else if (bank == 1) {
+            Serial.print("PT Channel: ");
+            Serial.print(channel + 1);
+            Serial.print(" | Raw: ");
+            Serial.println(res, HEX);
+          }
+          else if (bank == 2) {
+            Serial.print("LCTC Channel: ");
+            Serial.print(channel + 1);
+            Serial.print(" | Raw: ");
+            Serial.println(res, HEX);
+          }
 
           // Advancing channel and/or bank
           channel++;
@@ -318,14 +339,16 @@ void setup() {
 
   ptADC.setSettings(SPISettingsDefault);
   delay(100);
-  ptADC.writeRegisterDefaults(); // Called twice to ensure operation after power-cycling
+  // ptADC.writeRegisterDefaults(); // Called twice to ensure operation after power-cycling
   delay(100);
+  // ptADC.writeRegisterDefaults();
   ptADC.setGain(GainSettings::GAIN_1);
-  ptADC.setMuxInputs(MuxSettings::CH0, MuxSettings::AGND);
+  ptADC.setMuxInputs(MuxSettings::AGND, MuxSettings::AGND);
   ptADC.setVREF(1.25f);
+  delay(100);
   ptADC.readAllRegisters();
 
-  if (DEBUG_F_ADC) {ptADC.printRegisters();}
+  if (DEBUG_F_ADC) {ptADC.readAllRegisters(); ptADC.printRegisters();}
 
   scanner.setup();
 
@@ -555,9 +578,9 @@ void loop() {
 
   char sPacket[512], ptPacket[512], lctcPacket[512];
 
-  toCSVRow(sBank.data,'s', NUM_DC_CHANNELS, sPacket, sizeof(sPacket), DATA_DECIMALS);
-  toCSVRow(ptBank.data,'p', NUM_PT_CHANNELS, ptPacket, sizeof(ptPacket), DATA_DECIMALS);
-  toCSVRow(lctcBank.data,'t', NUM_LC_CHANNELS + NUM_TC_CHANNELS, lctcPacket, sizeof(lctcPacket), DATA_DECIMALS);
+  toCSVRow(banks[0].data,'s', NUM_DC_CHANNELS, sPacket, sizeof(sPacket), DATA_DECIMALS);
+  toCSVRow(banks[1].data,'p', NUM_PT_CHANNELS, ptPacket, sizeof(ptPacket), DATA_DECIMALS);
+  toCSVRow(banks[2].data,'t', NUM_LC_CHANNELS + NUM_TC_CHANNELS, lctcPacket, sizeof(lctcPacket), DATA_DECIMALS);
 
   if (serialTimer > SERIAL_WRITE_DELAY) {
 
@@ -575,19 +598,19 @@ void loop() {
 
   }
 
-  for (int i = 0; i < 12; i++) {
-  if (dcChannels[i].getControllerPtr() != nullptr) {
-    if (i == 10) {
-      dcChannels[i].getControllerPtr()->updateController(ptBank.data[14] + 0.4456);
-      // dcChannels[i].setState(dcChannels[i].getControllerPtr()->getState());
-    }
-    else if (i == 11){
-      dcChannels[i].getControllerPtr()->updateController(ptBank.data[15]);
-    }
+  // for (int i = 0; i < 12; i++) {
+  // if (dcChannels[i].getControllerPtr() != nullptr) {
+  //   if (i == 10) {
+  //     dcChannels[i].getControllerPtr()->updateController(ptBank.data[14] + 0.4456);
+  //     // dcChannels[i].setState(dcChannels[i].getControllerPtr()->getState());
+  //   }
+  //   else if (i == 11){
+  //     dcChannels[i].getControllerPtr()->updateController(ptBank.data[15]);
+  //   }
     
-    dcChannels[i].setState(dcChannels[i].getControllerPtr()->getState());
-   }
-  }
+  //   dcChannels[i].setState(dcChannels[i].getControllerPtr()->getState());
+  //  }
+  // }
 }
 
 
