@@ -40,6 +40,10 @@ static constexpr unsigned int T_CONV_US = 1000;
 
 // =================== Serial configurations ================= //
 
+static constexpr bool DEBUG_F_ADC = true;
+static constexpr bool DEBUG_BB = false;
+static constexpr bool DEBUG_PACKET = false;
+
 static constexpr unsigned int SERIAL_BAUD_RATE = 115200;
 static constexpr unsigned int SERIAL_TIMEOUT = 2000;
 static constexpr unsigned int SERIAL_WRITE_DELAY = 100000; // Microseconds to wait between writes to prevent overwhelming the serial bus

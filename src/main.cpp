@@ -233,8 +233,14 @@ Pulse armPulse(PIN_ARM);
 Pulse disarmPulse(PIN_DISARM);
 
 elapsedMicros serialTimer;
+elapsedMillis tareTimer = 0;
 
 ADCMuxSystem scanner;
+
+bool tared = false;
+double offset1 = 0, offset2 = 0;
+double sum1 = 0 , sum2 = 0;
+int counter = 0;
 
 void setup() {
   // put your setup code here, to run once:
@@ -314,14 +320,14 @@ void setup() {
   delay(100);
   ptADC.writeRegisterDefaults(); // Called twice to ensure operation after power-cycling
   delay(100);
-  ptADC.writeRegisterDefaults();
-  delay(100);
   ptADC.setGain(GainSettings::GAIN_1);
   ptADC.setMuxInputs(MuxSettings::CH0, MuxSettings::AGND);
   ptADC.setVREF(1.25f);
+  ptADC.readAllRegisters();
+
+  if (DEBUG_F_ADC) {ptADC.printRegisters();}
 
   scanner.setup();
-
 
 }
 
@@ -437,21 +443,27 @@ void loop() {
         dcChannels[11].getControllerPtr()->setState(state);
       }
 
+      Serial.print("Channel: ");
+      Serial.println(channelChar);
+      Serial.print("State: ");
+      Serial.println(stateChar);
 
     }
 
     else if (idChar == 'b') {
+
+      Serial.println(rxBuffer);
       // Configuring bang bang deadbands and minimum actuation times
-      double channelRx = 0;
+      unsigned channelRx = 0;
       double targetPVRx = 0;
       double upperDeadbandRx = 0;
       double lowerDeadbandRx = 0;
-      double minOffTimeRx = 0;
-      double minOnTimeRx = 0;
+      unsigned long minOffTimeRx = 0;
+      unsigned long minOnTimeRx = 0;
 
-      char* token = strtok(rxBuffer, ",");
+      // char* token = strtok(rxBuffer, ".");
 
-      if (token && sscanf(token + 1, "%i.%5u.%5u.%5u.%5u.%5u", &channelRx, &targetPVRx, &lowerDeadbandRx, &upperDeadbandRx, &minOffTimeRx, &minOnTimeRx) == 6) {
+      if (sscanf(rxBuffer, "b%x,%lf,%lf,%lf,%u,%u", &channelRx, &targetPVRx, &lowerDeadbandRx, &upperDeadbandRx, &minOffTimeRx, &minOnTimeRx) == 6) {
 
         if (channelRx == 1) {
 
@@ -461,18 +473,23 @@ void loop() {
           dcChannels[10].getControllerPtr()->setMinOffTime(minOffTimeRx);
           dcChannels[10].getControllerPtr()->setMinOnTime(minOnTimeRx);
 
-          Serial.println("Received Fuel BB configuration: ");
-          Serial.print("Target Pressure, raw value: ");
-          Serial.println(targetPVRx);
-          Serial.print("Lower deadband, raw value: ");
-          Serial.println(lowerDeadbandRx);
-          Serial.print("Upper deadband, raw value: ");
-          Serial.println(upperDeadbandRx);
-          Serial.print("Min off time: ");
-          Serial.println(minOffTimeRx);
-          Serial.print("Min on time: ");
-          Serial.println(minOnTimeRx);
+          if (DEBUG_BB) {
 
+            Serial.println("Received Fuel BB configuration: ");
+            Serial.print("Channel: ");
+            Serial.println(channelRx);
+            Serial.print("Target Pressure, raw value: ");
+            Serial.println(targetPVRx, 5);
+            Serial.print("Lower deadband, raw value: ");
+            Serial.println(lowerDeadbandRx, 5);
+            Serial.print("Upper deadband, raw value: ");
+            Serial.println(upperDeadbandRx, 5);
+            Serial.print("Min off time: ");
+            Serial.println(minOffTimeRx);
+            Serial.print("Min on time: ");
+            Serial.println(minOnTimeRx);
+
+          }
         }
 
         if (channelRx == 2) {
@@ -483,25 +500,25 @@ void loop() {
           dcChannels[11].getControllerPtr()->setMinOffTime(minOffTimeRx);
           dcChannels[11].getControllerPtr()->setMinOnTime(minOnTimeRx);
 
-          Serial.println("Received LOX BB configuration: ");
-          Serial.print("Target Pressure, raw value: ");
-          Serial.println(targetPVRx);
-          Serial.print("Lower deadband, raw value: ");
-          Serial.println(lowerDeadbandRx);
-          Serial.print("Upper deadband, raw value: ");
-          Serial.println(upperDeadbandRx);
-          Serial.print("Min off time: ");
-          Serial.println(minOffTimeRx);
-          Serial.print("Min on time: ");
-          Serial.println(minOnTimeRx);
+          if (DEBUG_BB) {
 
+            Serial.print("Channel: ");
+            Serial.println(channelRx);
+            Serial.println("Received LOX BB configuration: ");
+            Serial.print("Target Pressure, raw value: ");
+            Serial.println(targetPVRx, 5);
+            Serial.print("Lower deadband, raw value: ");
+            Serial.println(lowerDeadbandRx, 5);
+            Serial.print("Upper deadband, raw value: ");
+            Serial.println(upperDeadbandRx, 5);
+            Serial.print("Min off time: ");
+            Serial.println(minOffTimeRx);
+            Serial.print("Min on time: ");
+            Serial.println(minOnTimeRx);
+
+          }
         }
-
-
-
        }
-
-
     }
 
     memset(rxBuffer, 0, sizeof(rxBuffer));
@@ -513,19 +530,28 @@ void loop() {
   disarmPulse.update();
   sh.update();
 
-  for (int i = 0; i < 12; i++) {
-    if (dcChannels[i].getControllerPtr() != nullptr) {
-      if (i == 10) {
-        dcChannels[i].getControllerPtr()->updateController(ptBank.data[14]);
-      }
-      else if (i == 11)
-        dcChannels[i].getControllerPtr()->updateController(ptBank.data[15]);
-    }
-  }
+
 
   // =========== Data Acquisition ===========
 
   scanner.update();
+
+  // if (!tared && tareTimer > 1000) {
+
+  //   sum1 += ptBank.data[14];
+  //   sum2 += ptBank.data[15];
+  //   counter++;
+
+  //   if (counter >= 10000) {
+  //     offset1 = sum1 / 10000.0;
+  //     offset2 = sum2 / 10000.0;
+  //     tared = true;
+  //   }
+
+  // }
+
+  // ptBank.data[14] -= offset1;
+  // ptBank.data[15] -= offset2;
 
   char sPacket[512], ptPacket[512], lctcPacket[512];
 
@@ -549,8 +575,19 @@ void loop() {
 
   }
 
- 
- 
+  for (int i = 0; i < 12; i++) {
+  if (dcChannels[i].getControllerPtr() != nullptr) {
+    if (i == 10) {
+      dcChannels[i].getControllerPtr()->updateController(ptBank.data[14] + 0.4456);
+      // dcChannels[i].setState(dcChannels[i].getControllerPtr()->getState());
+    }
+    else if (i == 11){
+      dcChannels[i].getControllerPtr()->updateController(ptBank.data[15]);
+    }
+    
+    dcChannels[i].setState(dcChannels[i].getControllerPtr()->getState());
+   }
+  }
 }
 
 

@@ -16,10 +16,11 @@ void BangBangController::updateController(double currentPV ) {
 
     bool over = currentPV > (targetPV + upperDeadband);
     bool under = currentPV < (targetPV - lowerDeadband);
-    bool insideDeadband = !over && !under;
+    // bool insideDeadband = !over && !under;
 
     // Based SpaceX logic
     if (!isActive) {
+        valveState = false;
         return;
     }
     if (over) {
@@ -28,8 +29,17 @@ void BangBangController::updateController(double currentPV ) {
     else if (under) {
        requestState(true);
     }
+}
 
+void BangBangController::requestState(bool desiredState) {
+    if (desiredState == valveState) return;  // already in desired state
 
+    const uint32_t required_ms = valveState ? minOnTime : minOffTime;
+
+    if (timer >= required_ms) {
+        valveState = desiredState;
+        timer = 0;              // reset timer at each transition
+    }
 }
 
 void BangBangController::setState(bool state) {isActive = state;}
@@ -40,15 +50,7 @@ void BangBangController::setTargetPV(double targetPV_) {targetPV = targetPV_;}
 void BangBangController::setLowerDeadband(double lowerDeadband_) {lowerDeadband = lowerDeadband_;}
 void BangBangController::setUpperDeadband(double upperDeadband_) {upperDeadband = upperDeadband_;}
 
-void BangBangController::requestState(bool desiredState) {
-    if (desiredState == valveState) return;  // already in desired state
 
-    const uint32_t required_ms = valveState ? minOnTime : minOffTime;
-    if (timer >= required_ms) {
-        valveState = desiredState;
-        timer = 0;              // reset timer at each transition
-    }
-}
 
 void BangBangController::setMinOffTime(double minOffTime_) {minOffTime = minOffTime_;}
 void BangBangController::setMinOnTime(double minOnTime_) {minOnTime = minOnTime_;}
