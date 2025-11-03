@@ -2,7 +2,7 @@
 #include <SPI.h>
 #include "SequenceHandler.hpp"
 #include <Wire.h>
-#include "MCP3561.hpp" // ADC
+#include "drivers\MCP3561.hpp" // ADC
 #include "DCChannel.hpp"
 #include "Constants.hpp"
 #include <SD.h>

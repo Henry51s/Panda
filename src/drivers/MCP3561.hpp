@@ -154,9 +154,9 @@ class MCP3561 {
   SPISettings spi_setting;
 
   public:
-    MCP3561(uint8_t chip_select, SPIClass& spi_bus);
+    MCP3561(uint8_t chip_select, SPIClass& spi_bus, SPISettings settings, float vref = 1.25);
     // Class methods
-    void setSettings(SPISettings settings);
+
 
     void readAllRegisters(void);
     void verifyRegisters(void);

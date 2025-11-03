@@ -2,34 +2,16 @@
 #include <SPI.h> // Assuming this is needed for SPISettings and SPI object
 
 
-MCP3561::MCP3561(uint8_t chip_select, SPIClass& spi_bus)
+MCP3561::MCP3561(uint8_t chip_select, SPIClass& spi_bus, SPISettings settings, float vref_ = 1.25)
   : chip_select_pin(chip_select)
-  , spi(spi_bus)            // ← bind the reference here
+  , spi(spi_bus)
+  , spi_setting(settings)
+  , vref(vref_)         // ← bind the reference here
 {
   pinMode(chip_select_pin, OUTPUT);
   digitalWrite(chip_select_pin, HIGH);
 }
 
-/**
- * @brief Sets the object-specific reference voltage to @param vref. 
- * This does NOT set the gain of the ADC. It should only be set to what the ADC has been physically configured to.
- */
-void MCP3561::setVREF(float vref = 1.25f) {
-
-  this->vref = vref;
-  
-}
-
-/**
- * @brief Sets the object-specific SPI configuration settings.
- * An @param SPISettings object contains the following settings:
- *  - Clock
- *  - Bit order
- *  - SPI mode
- */
-void MCP3561::setSettings(SPISettings settings) {
-  this->spi_setting = settings;
-}
 
 void MCP3561::writeRegister(uint8_t reg_addr, uint8_t data) {
 
@@ -41,17 +23,6 @@ void MCP3561::writeRegister(uint8_t reg_addr, uint8_t data) {
   spi.transfer(data);
   digitalWrite(chip_select_pin, HIGH);
   spi.endTransaction();
-
-}
-
-void MCP3561::writeFastCommand(uint8_t fastCmd) {
-
-  spi.beginTransaction(spi_setting);
-  digitalWrite(chip_select_pin, LOW);
-  spi.transfer(fastCmd);
-  digitalWrite(chip_select_pin, HIGH);
-  spi.endTransaction();
-
 
 }
 
@@ -132,6 +103,17 @@ void MCP3561::setGain(GainSettings gain) {
   writeRegister(CONFIG2_ADDR, data);
 
 }
+
+void MCP3561::writeFastCommand(uint8_t fastCmd) {
+
+  spi.beginTransaction(spi_setting);
+  digitalWrite(chip_select_pin, LOW);
+  spi.transfer(fastCmd);
+  digitalWrite(chip_select_pin, HIGH);
+  spi.endTransaction();
+
+}
+
 
 void MCP3561::trigger(void) {
   writeFastCommand(FAST_CMD_START_RESTART);
