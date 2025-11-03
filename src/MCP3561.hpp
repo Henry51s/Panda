@@ -41,6 +41,8 @@
 #define CONFIG1_OSR_256 0b0011 << CONFIG1_OSR_POS
 
 #define CONFIG2_ADDR 0x03
+#define CONFIG2_WRITE (CONFIG2_ADDR << COMMAND_ADDR_POS) | WRITE_COMMAND
+#define CONFIG2_DEFAULT 0b10001111;
 
 #define CONFIG3_ADDR 0x04
 #define CONFIG3_DEFAULT 0b10000000 // (In order of register settings: one-shot, 8-bit sign + 24-bit data, everything else default)

@@ -1,5 +1,9 @@
 #include "SequenceHandler.hpp"
 
+SequenceHandler::SequenceHandler(DCChannel* dcchannels_) {
+    dcchannels = dcchannels_;
+}
+
 void SequenceHandler::resetCommand() {
     memset(solenoidChannels, 0, sizeof(solenoidChannels));
     memset(solenoidStates,   0, sizeof(solenoidStates));
@@ -151,16 +155,16 @@ void SequenceHandler::update() {
         // digitalWrite(dcChannels[solenoidChannels[currentIndex] - 1], solenoidStates[currentIndex]);
         dcchannels[solenoidChannels[currentIndex] - 1].setState(solenoidStates[currentIndex]);
 
-        // Serial.print("Firing idx=");
-        // Serial.print(currentIndex);
-        // Serial.print(" chan=");
-        // Serial.print(solenoidChannels[currentIndex]);
-        // Serial.print(" pin=");
-        // Serial.print(dcChannels[solenoidChannels[currentIndex] - 1]);
-        // Serial.print(" state=");
-        // Serial.println(solenoidStates[currentIndex]);
-        // Serial.print(" duration=");
-        // Serial.println(solenoidDelays[currentIndex]);
+        Serial.print("Firing idx=");
+        Serial.print(currentIndex);
+        Serial.print(" chan=");
+        Serial.print(solenoidChannels[currentIndex]);
+        Serial.print(" pin=");
+        Serial.print(solenoidChannels[currentIndex] - 1);
+        Serial.print(" state=");
+        Serial.println(solenoidStates[currentIndex]);
+        Serial.print(" duration=");
+        Serial.println(solenoidDelays[currentIndex]);
 
         sTimer = 0;
         inDelay = true;

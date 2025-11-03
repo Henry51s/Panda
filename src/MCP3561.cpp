@@ -161,6 +161,9 @@ void MCP3561::writeRegisterDefaults(void) {
   // spi.transfer(data_byte);
   // digitalWrite(chip_select_pin, HIGH);
   // Next, write to CONFIG2 register. No need to change anything, defaults OK.
+  command_byte = CONFIG2_WRITE;
+  data_byte = CONFIG2_DEFAULT;
+  writeRegister(CONFIG2_ADDR, data_byte);
 
   // Next, write to CONFIG3 register.
   command_byte = CONFIG3_WRITE;
@@ -240,8 +243,8 @@ void MCP3561::writeRegisterDefaults(void) {
   // Serial.println(sgn, HEX);
 
   // return raw24;
-  // return (raw24 & 0x800000) ? int32_t(raw24 | 0xFF000000) : int32_t(raw24);
-  return (float(raw24) / 8388608.0f) * vref;
+  return vref * ((raw24 & 0x800000) ? int32_t(raw24 | 0xFF000000) : int32_t(raw24)) / 8388608.0f;
+  // return (float(raw24) / 8388608.0f);
 }
 
 void MCP3561::readAllRegisters(void) {

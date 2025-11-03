@@ -48,7 +48,7 @@ FlexSerial UART2(UART2Pins.rx, UART2Pins.tx); // RX, TX
 MCP3561 sADC(sADCPins.cs, SPI);
 MCP3561 ptADC(ptADCPins.cs, SPI1);
 
-SequenceHandler sh;
+SequenceHandler sh(dcChannels);
 
 // ========== Telemetry Functions =========
 
@@ -171,30 +171,30 @@ struct ADCMuxSystem {
         // wait for T_CONV_US, then read the ADC output into the respective samples index
         // Increment channel (If it's at 15, wrap back to zero, then we have a full sample array and we're good to process)
         // return to IDLE
-        if (timer >= T_CONV_US || digitalRead(currentBank.irqPin) == LOW) {
+        if (timer >= T_CONV_US) {
           // Read ADC output
           // Set samples[channel] to what the ADC outputs
           float res = currentBank.adc.getOutput();
           currentBank.data[channel] = res;
 
-          if (bank == 0) {
-            Serial.print("S Channel: ");
-            Serial.print(channel + 1);
-            Serial.print(" | Raw: ");
-            Serial.println(res, HEX);
-          }
-          else if (bank == 1) {
-            Serial.print("PT Channel: ");
-            Serial.print(channel + 1);
-            Serial.print(" | Raw: ");
-            Serial.println(res, HEX);
-          }
-          else if (bank == 2) {
-            Serial.print("LCTC Channel: ");
-            Serial.print(channel + 1);
-            Serial.print(" | Raw: ");
-            Serial.println(res, HEX);
-          }
+          // if (bank == 0) {
+          //   Serial.print("S Channel: ");
+          //   Serial.print(channel + 1);
+          //   Serial.print(" | Raw: ");
+          //   Serial.println(res, HEX);
+          // }
+          // else if (bank == 1) {
+          //   Serial.print("PT Channel: ");
+          //   Serial.print(channel + 1);
+          //   Serial.print(" | Raw: ");
+          //   Serial.println(res, HEX);
+          // }
+          // else if (bank == 2) {
+          //   Serial.print("LCTC Channel: ");
+          //   Serial.print(channel + 1);
+          //   Serial.print(" | Raw: ");
+          //   Serial.println(res, HEX);
+          // }
 
           // Advancing channel and/or bank
           channel++;
@@ -254,14 +254,7 @@ Pulse armPulse(PIN_ARM);
 Pulse disarmPulse(PIN_DISARM);
 
 elapsedMicros serialTimer;
-elapsedMillis tareTimer = 0;
-
 ADCMuxSystem scanner;
-
-bool tared = false;
-double offset1 = 0, offset2 = 0;
-double sum1 = 0 , sum2 = 0;
-int counter = 0;
 
 void setup() {
   // put your setup code here, to run once:
@@ -339,16 +332,16 @@ void setup() {
 
   ptADC.setSettings(SPISettingsDefault);
   delay(100);
-  // ptADC.writeRegisterDefaults(); // Called twice to ensure operation after power-cycling
+  ptADC.writeRegisterDefaults(); // Called twice to ensure operation after power-cycling
   delay(100);
-  // ptADC.writeRegisterDefaults();
+  ptADC.writeRegisterDefaults();
   ptADC.setGain(GainSettings::GAIN_1);
-  ptADC.setMuxInputs(MuxSettings::AGND, MuxSettings::AGND);
+  ptADC.setMuxInputs(MuxSettings::CH0, MuxSettings::AGND);
   ptADC.setVREF(1.25f);
-  delay(100);
-  ptADC.readAllRegisters();
+  ptADC.setBiasCurrent(BiasCurrentSettings::I_0);
+  // ptADC.readAllRegisters();
 
-  if (DEBUG_F_ADC) {ptADC.readAllRegisters(); ptADC.printRegisters();}
+  // if (DEBUG_F_ADC) {ptADC.readAllRegisters(); ptADC.printRegisters();}
 
   scanner.setup();
 
@@ -409,9 +402,8 @@ void loop() {
   
 
     if (idChar == 's') {
-
+      Serial.println(rxBuffer);
       sh.setCommand(rxBuffer);
-
     }
 
     else if (idChar == 'S') {
@@ -448,101 +440,102 @@ void loop() {
     }
 
     else if (idChar == 'f') {
+      Serial.println(rxBuffer);
       sh.setState(true);
     }
 
-    else if (idChar == 'B') {
+    // else if (idChar == 'B') {
 
-      char channelChar = rxBuffer[1];
-      char stateChar = rxBuffer[2];
+    //   char channelChar = rxBuffer[1];
+    //   char stateChar = rxBuffer[2];
 
-      unsigned state = stateChar - '0';
+    //   unsigned state = stateChar - '0';
 
-      if (channelChar == '1') {
-        dcChannels[10].getControllerPtr()->setState(state);
-      }
+    //   if (channelChar == '1') {
+    //     dcChannels[10].getControllerPtr()->setState(state);
+    //   }
 
-      if (channelChar == '2') {
-        dcChannels[11].getControllerPtr()->setState(state);
-      }
+    //   if (channelChar == '2') {
+    //     dcChannels[11].getControllerPtr()->setState(state);
+    //   }
 
-      Serial.print("Channel: ");
-      Serial.println(channelChar);
-      Serial.print("State: ");
-      Serial.println(stateChar);
+    //   Serial.print("Channel: ");
+    //   Serial.println(channelChar);
+    //   Serial.print("State: ");
+    //   Serial.println(stateChar);
 
-    }
+    // }
 
-    else if (idChar == 'b') {
+    // else if (idChar == 'b') {
 
-      Serial.println(rxBuffer);
-      // Configuring bang bang deadbands and minimum actuation times
-      unsigned channelRx = 0;
-      double targetPVRx = 0;
-      double upperDeadbandRx = 0;
-      double lowerDeadbandRx = 0;
-      unsigned long minOffTimeRx = 0;
-      unsigned long minOnTimeRx = 0;
+    //   Serial.println(rxBuffer);
+    //   // Configuring bang bang deadbands and minimum actuation times
+    //   unsigned channelRx = 0;
+    //   double targetPVRx = 0;
+    //   double upperDeadbandRx = 0;
+    //   double lowerDeadbandRx = 0;
+    //   unsigned long minOffTimeRx = 0;
+    //   unsigned long minOnTimeRx = 0;
 
-      // char* token = strtok(rxBuffer, ".");
+    //   // char* token = strtok(rxBuffer, ".");
 
-      if (sscanf(rxBuffer, "b%x,%lf,%lf,%lf,%u,%u", &channelRx, &targetPVRx, &lowerDeadbandRx, &upperDeadbandRx, &minOffTimeRx, &minOnTimeRx) == 6) {
+    //   if (sscanf(rxBuffer, "b%x,%lf,%lf,%lf,%u,%u", &channelRx, &targetPVRx, &lowerDeadbandRx, &upperDeadbandRx, &minOffTimeRx, &minOnTimeRx) == 6) {
 
-        if (channelRx == 1) {
+    //     if (channelRx == 1) {
 
-          dcChannels[10].getControllerPtr()->setTargetPV(targetPVRx);
-          dcChannels[10].getControllerPtr()->setLowerDeadband(lowerDeadbandRx);
-          dcChannels[10].getControllerPtr()->setUpperDeadband(upperDeadbandRx);
-          dcChannels[10].getControllerPtr()->setMinOffTime(minOffTimeRx);
-          dcChannels[10].getControllerPtr()->setMinOnTime(minOnTimeRx);
+    //       dcChannels[10].getControllerPtr()->setTargetPV(targetPVRx);
+    //       dcChannels[10].getControllerPtr()->setLowerDeadband(lowerDeadbandRx);
+    //       dcChannels[10].getControllerPtr()->setUpperDeadband(upperDeadbandRx);
+    //       dcChannels[10].getControllerPtr()->setMinOffTime(minOffTimeRx);
+    //       dcChannels[10].getControllerPtr()->setMinOnTime(minOnTimeRx);
 
-          if (DEBUG_BB) {
+    //       if (DEBUG_BB) {
 
-            Serial.println("Received Fuel BB configuration: ");
-            Serial.print("Channel: ");
-            Serial.println(channelRx);
-            Serial.print("Target Pressure, raw value: ");
-            Serial.println(targetPVRx, 5);
-            Serial.print("Lower deadband, raw value: ");
-            Serial.println(lowerDeadbandRx, 5);
-            Serial.print("Upper deadband, raw value: ");
-            Serial.println(upperDeadbandRx, 5);
-            Serial.print("Min off time: ");
-            Serial.println(minOffTimeRx);
-            Serial.print("Min on time: ");
-            Serial.println(minOnTimeRx);
+    //         Serial.println("Received Fuel BB configuration: ");
+    //         Serial.print("Channel: ");
+    //         Serial.println(channelRx);
+    //         Serial.print("Target Pressure, raw value: ");
+    //         Serial.println(targetPVRx, 5);
+    //         Serial.print("Lower deadband, raw value: ");
+    //         Serial.println(lowerDeadbandRx, 5);
+    //         Serial.print("Upper deadband, raw value: ");
+    //         Serial.println(upperDeadbandRx, 5);
+    //         Serial.print("Min off time: ");
+    //         Serial.println(minOffTimeRx);
+    //         Serial.print("Min on time: ");
+    //         Serial.println(minOnTimeRx);
 
-          }
-        }
+    //       }
+    //     }
 
-        if (channelRx == 2) {
+    //     if (channelRx == 2) {
 
-          dcChannels[11].getControllerPtr()->setTargetPV(targetPVRx);
-          dcChannels[11].getControllerPtr()->setLowerDeadband(lowerDeadbandRx);
-          dcChannels[11].getControllerPtr()->setUpperDeadband(upperDeadbandRx);
-          dcChannels[11].getControllerPtr()->setMinOffTime(minOffTimeRx);
-          dcChannels[11].getControllerPtr()->setMinOnTime(minOnTimeRx);
+    //       dcChannels[11].getControllerPtr()->setTargetPV(targetPVRx);
+    //       dcChannels[11].getControllerPtr()->setLowerDeadband(lowerDeadbandRx);
+    //       dcChannels[11].getControllerPtr()->setUpperDeadband(upperDeadbandRx);
+    //       dcChannels[11].getControllerPtr()->setMinOffTime(minOffTimeRx);
+    //       dcChannels[11].getControllerPtr()->setMinOnTime(minOnTimeRx);
 
-          if (DEBUG_BB) {
+    //       if (DEBUG_BB) {
 
-            Serial.print("Channel: ");
-            Serial.println(channelRx);
-            Serial.println("Received LOX BB configuration: ");
-            Serial.print("Target Pressure, raw value: ");
-            Serial.println(targetPVRx, 5);
-            Serial.print("Lower deadband, raw value: ");
-            Serial.println(lowerDeadbandRx, 5);
-            Serial.print("Upper deadband, raw value: ");
-            Serial.println(upperDeadbandRx, 5);
-            Serial.print("Min off time: ");
-            Serial.println(minOffTimeRx);
-            Serial.print("Min on time: ");
-            Serial.println(minOnTimeRx);
+    //         Serial.print("Channel: ");
+    //         Serial.println(channelRx);
+    //         Serial.println("Received LOX BB configuration: ");
+    //         Serial.print("Target Pressure, raw value: ");
+    //         Serial.println(targetPVRx, 5);
+    //         Serial.print("Lower deadband, raw value: ");
+    //         Serial.println(lowerDeadbandRx, 5);
+    //         Serial.print("Upper deadband, raw value: ");
+    //         Serial.println(upperDeadbandRx, 5);
+    //         Serial.print("Min off time: ");
+    //         Serial.println(minOffTimeRx);
+    //         Serial.print("Min on time: ");
+    //         Serial.println(minOnTimeRx);
 
-          }
-        }
-       }
-    }
+    //       }
+    //     }
+    //    }
+    // }
 
     memset(rxBuffer, 0, sizeof(rxBuffer));
     packetReady = false;
@@ -589,6 +582,8 @@ void loop() {
     Serial2.print(sPacket);
     Serial2.print(ptPacket);
     Serial2.print(lctcPacket);
+
+    // Serial.println(ptPacket);
     // Serial2.write(ptPacket, ptPacketLen);
     // ==========
     // Serial.println("Transmission time: " + String(serialTimer - currentTime) + "us");

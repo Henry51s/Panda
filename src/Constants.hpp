@@ -35,12 +35,12 @@ static constexpr uint8_t PINS_DC_CHANNELS[12] = {34, 35, 36, 37, 38, 39, 40, 41,
 // =================== SPI & ADC configurations ================= //
 
 static const SPISettings SPISettingsDefault(20000000, MSBFIRST, SPI_MODE0);
-static constexpr unsigned int T_MUX_SETTLE_US = 500;
-static constexpr unsigned int T_CONV_US = 100000;
+static constexpr unsigned int T_MUX_SETTLE_US = 5000;
+static constexpr unsigned int T_CONV_US = 10000;
 
 // =================== Serial configurations ================= //
 
-static constexpr bool DEBUG_F_ADC = true;
+static constexpr bool DEBUG_F_ADC = false;
 static constexpr bool DEBUG_BB = false;
 static constexpr bool DEBUG_PACKET = false;
 
@@ -52,7 +52,7 @@ static constexpr unsigned int PACKET_IDLE_MS = 100;
 static constexpr unsigned int PULSE_DURATION = 500;
 
 static constexpr uint8_t NUM_MAX_COMMANDS = 32;
-static constexpr uint8_t DATA_DECIMALS = 4; // Number of decimal places in telemetry data
+static constexpr uint8_t DATA_DECIMALS = 6; // Number of decimal places in telemetry data
 
 static constexpr uint8_t NUM_DC_CHANNELS = 12;
 static constexpr uint8_t NUM_PT_CHANNELS = 16;

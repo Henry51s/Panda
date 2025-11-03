@@ -15,6 +15,8 @@ class SequenceHandler {
 
     void printCurrentCommand(void);
 
+    SequenceHandler(DCChannel* dcchannels_);
+
     private:
 
     elapsedMillis sTimer;
