@@ -2,10 +2,8 @@
 #include "InterfaceController.hpp"
 
 class NullController : public InterfaceController {
-
+    private:
+    bool state = false;
     public:
-
-    bool step(float measurement) override {return false;}
-
-
+    void determineState(float measurement) {state = false;}
 };

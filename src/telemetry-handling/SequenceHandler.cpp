@@ -1,4 +1,4 @@
-#include "SequenceHandler.hpp"
+#include "telemetry-handling/SequenceHandler.hpp"
 
 SequenceHandler::SequenceHandler(DCChannel* dcchannels_) {
     dcchannels = dcchannels_;

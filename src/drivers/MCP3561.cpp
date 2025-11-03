@@ -12,6 +12,7 @@ MCP3561::MCP3561(uint8_t chip_select, SPIClass& spi_bus, SPISettings settings, f
   digitalWrite(chip_select_pin, HIGH);
 }
 
+// =========== Basic SPI Communication functions ==========
 
 void MCP3561::writeRegister(uint8_t reg_addr, uint8_t data) {
 
@@ -40,6 +41,18 @@ uint8_t MCP3561::readRegister(uint8_t reg_addr) {
   return data;
 
 }
+
+void MCP3561::writeFastCommand(uint8_t fastCmd) {
+
+  spi.beginTransaction(spi_setting);
+  digitalWrite(chip_select_pin, LOW);
+  spi.transfer(fastCmd);
+  digitalWrite(chip_select_pin, HIGH);
+  spi.endTransaction();
+
+}
+
+// ==========
 
 // ========== Configuration Functions ==========
 
@@ -104,15 +117,7 @@ void MCP3561::setGain(GainSettings gain) {
 
 }
 
-void MCP3561::writeFastCommand(uint8_t fastCmd) {
 
-  spi.beginTransaction(spi_setting);
-  digitalWrite(chip_select_pin, LOW);
-  spi.transfer(fastCmd);
-  digitalWrite(chip_select_pin, HIGH);
-  spi.endTransaction();
-
-}
 
 
 void MCP3561::trigger(void) {

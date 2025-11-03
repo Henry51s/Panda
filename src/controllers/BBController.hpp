@@ -3,7 +3,7 @@
 #include "elapsedMillis.h"
 #include "InterfaceController.hpp"
 
-class BangBangController : public InterfaceController {
+class BBController : public InterfaceController {
     private:
 
     double lowerDeadband = 0;
@@ -12,28 +12,27 @@ class BangBangController : public InterfaceController {
     double minOffTime = 0;
     double minOnTime = 0;
 
-    bool isActive = false;
+    // bool isActive = false;
     double currentPV = 0, targetPV = 0; // Make sure units are consistent
-    bool valveState = false;
+    bool state = false;
     // bool inHys = false;
 
-    elapsedMillis timer = 0;
+    // elapsedMillis timer = 0;
 
     public: 
 
-    BangBangController(double lowerDeadband_, double upperDeadband_, double minOffTime_, double minOnTime_); // All controllers should be initialized after initializing all DC channels
-
-    void setState(bool state);
-    bool getState(void);
-    
-    void setTargetPV(double targetPV_);
-    void updateController(double currentPV_);
-    void requestState(bool desiredState);
+    BBController(double lowerDeadband_, double upperDeadband_, double minOffTime_, double minOnTime_); // All controllers should be initialized after initializing all DC channels
+ 
+    // void updateController(double currentPV_);
+    void determineState(float measurement);
+    bool getState();
 
     void setUpperDeadband(double upperDeadband_);
     void setLowerDeadband(double lowerDeadband_);
 
     void setMinOffTime(double minOffTime_);
     void setMinOnTime(double minOnTime_);
+
+    void setTargetPV(double targetPV_);
 
 };
