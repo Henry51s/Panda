@@ -1,8 +1,9 @@
 #pragma once
 // #include <Arduino.h>
 #include "elapsedMillis.h"
+#include "InterfaceController.hpp"
 
-class BangBangController {
+class BangBangController : public InterfaceController {
     private:
 
     double lowerDeadband = 0;
