@@ -10,8 +10,8 @@
  // =================== SPI & ADC configurations ================= //
 
 static const SPISettings SPISettingsDefault(20000000, MSBFIRST, SPI_MODE0);
-static constexpr unsigned int T_MUX_SETTLE_US = 5000;
-static constexpr unsigned int T_CONV_US = 10000;
+static constexpr unsigned int T_MUX_SETTLE_US = 500;
+static constexpr unsigned int T_CONV_US = 1000;
 
 // =================== Serial configurations ================= //
 
@@ -25,6 +25,7 @@ static constexpr unsigned int SERIAL_WRITE_DELAY = 100000; // Microseconds to wa
 
 static constexpr unsigned int PACKET_IDLE_MS = 100;
 static constexpr unsigned int PULSE_DURATION = 500;
+static constexpr size_t RX_BUF_SIZE = 256;
 
 static constexpr uint8_t NUM_MAX_COMMANDS = 32;
 static constexpr uint8_t DATA_DECIMALS = 6; // Number of decimal places in telemetry data
@@ -35,6 +36,7 @@ static constexpr uint8_t NUM_LC_CHANNELS = 6;
 static constexpr uint8_t NUM_TC_CHANNELS = 6;
 
 static constexpr uint8_t PACKET_SIZE = NUM_DC_CHANNELS + NUM_PT_CHANNELS + NUM_LC_CHANNELS + NUM_TC_CHANNELS;
+static constexpr size_t TX_BUF_SIZE = 512;
 
 // =================== BangBangControllers configurations ================= //
 /**

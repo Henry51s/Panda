@@ -1,4 +1,4 @@
-#include "controllers/SequenceHandler.hpp"
+#include "dc-controllers/SequenceHandler.hpp"
 
 SequenceHandler::SequenceHandler(DCChannel* dcchannels_) {
     dcchannels = dcchannels_;

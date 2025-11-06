@@ -164,7 +164,9 @@ class MCP3561 {
     void trigger(void);
     float getOutput(void);
     void writeRegisterDefaults(void);
-    void setVREF(float vref = 1.25f);
+    void setVREF(float vref_ = 1.25f);
+
+    void setSettings(SPISettings settings);
 
     void setBiasCurrent(BiasCurrentSettings setting);
     void setMuxInputs(MuxSettings vinp, MuxSettings vinm);

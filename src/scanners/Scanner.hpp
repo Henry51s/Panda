@@ -13,6 +13,10 @@ class Scanner {
         WAIT_CONV
     };
 
+    
+
+    public:
+
     struct Bank {
         MCP3561 &adc;
         MuxSettings adcIn;
@@ -21,8 +25,6 @@ class Scanner {
         uint8_t numChannel;
         uint8_t irqPin;
     };
-
-    public:
     
     virtual ~Scanner() = default;
     virtual void update() = 0;

@@ -52,6 +52,8 @@ void MCP3561::writeFastCommand(uint8_t fastCmd) {
 
 }
 
+void MCP3561::setSettings(SPISettings settings) {spi_setting = settings;}
+
 // ==========
 
 // ========== Configuration Functions ==========
@@ -71,6 +73,8 @@ void MCP3561::setMuxInputs(MuxSettings vinp, MuxSettings vinm) {
   writeRegister(MUX_ADDR, data);
 
 }
+
+void MCP3561::setVREF(float vref_) {vref = vref_;}
 
 /**
  * @brief Configures the ADC's bias-source current.
