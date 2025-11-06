@@ -1,3 +1,4 @@
+#if 0
 #include "MCP3561.hpp"
 #include <SPI.h> // Assuming this is needed for SPISettings and SPI object
 
@@ -354,3 +355,5 @@ void MCP3561::printRegisters(void) {
   Serial.println(scan_data, BIN);
   Serial.println("-----------------------------");
 }
+
+#endif

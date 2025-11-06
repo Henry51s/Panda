@@ -2,7 +2,6 @@
 #include <SPI.h>
 #include <Wire.h>
 
-#include "drivers/MCP3561.hpp"
 #include "hardware-configs/pins.hpp"
 
 // #include "scanners/Scanner.hpp"
@@ -51,8 +50,12 @@ TODO:
 
 
 // MCP3561 sADC(sADCPins.cs, SPI, SPISettingsDefault); // Solenoid current ADC
-MCP3561 ptADC(ptADCPins.cs, SPI1, SPISettingsDefault); // Fluids data ADC
-FScanner fScanner(ptADC);
+MCP3561 adc(2, -1, 0, &SPI1, 26, 1, 27);
+
+void mcp_wrapper() { adc.IRQ_handler(); }
+// FScanner fScanner(adc);
+
+
 
 TelemetryHandler th(Serial2, 256);
 
@@ -71,6 +74,15 @@ void setup() {
   
   while(!Serial);
 
+  if (!adc.begin()) {Serial.println("ADC Initialization failed..."); while(1);}
+
+  adc.enableScanChannel(MCP_CH1);
+  adc.startContinuous();
+
+  Serial.println("ADC Initialized");
+
+
+
 
   // SPI.begin();
   // SPI.setClockDivider(4);
@@ -80,14 +92,14 @@ void setup() {
   // SPI.setSCK(sADCPins.sck);
 
 
-  SPI1.begin();
-  SPI1.setClockDivider(4);
+  // SPI1.begin();
+  // SPI1.setClockDivider(4);
 
-  SPI1.setMISO(ptADCPins.miso);
-  SPI1.setMOSI(ptADCPins.mosi);
-  SPI1.setSCK(ptADCPins.sck);
+  // SPI1.setMISO(ptADCPins.miso);
+  // SPI1.setMOSI(ptADCPins.mosi);
+  // SPI1.setSCK(ptADCPins.sck);
 
-  fScanner.setup();
+  // fScanner.setup();
   // I2CScanner();
   // Wire2.begin();
 
@@ -101,6 +113,9 @@ void setup() {
 
 }
 
+unsigned long previousMillis = 0;
+const long interval          = 1000;
+
 void loop() {
   // // put your main code here, to run repeatedly:
 
@@ -108,6 +123,26 @@ void loop() {
   if (th.isPacketReady()) {
     char* rxPacket = th.takePacket();
     // Feed rxPacket into command handler
+  }
+
+  unsigned long currentMillis = millis();
+  Serial.println(currentMillis);
+  if (currentMillis - previousMillis >= interval) {
+    previousMillis = currentMillis;
+
+    // read the input on default analog channel:
+    int32_t adcdata0 = adc.analogReadContinuous(MCP_CH0);
+    int32_t adcdata1 = adc.analogReadContinuous(MCP_CH1);
+
+    // Convert the analog reading
+    double voltage0 = adcdata0 * adc.getReference() / adc.getMaxValue();
+    double voltage1 = adcdata1 * adc.getReference() / adc.getMaxValue();
+
+    // print out the value you read:
+    Serial.print("voltage0: ");
+    Serial.println(voltage0, 10);
+    Serial.print("voltage1: ");
+    Serial.println(voltage1, 10);
   }
 
 

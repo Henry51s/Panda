@@ -1,7 +1,9 @@
 #pragma once
 #include <Arduino.h>
-#include "drivers/MCP3561.hpp"
+// #include "drivers/MCP3561.hpp"
+#include "drivers/MCP3x6x.h"
 #include "hardware-configs/BoardConfig.hpp"
+#include "hardware-configs/pins.hpp"
 
 class Scanner {
 
@@ -16,15 +18,6 @@ class Scanner {
     
 
     public:
-
-    struct Bank {
-        MCP3561 &adc;
-        MuxSettings adcIn;
-        const uint8_t* muxPins;
-        float* data;
-        uint8_t numChannel;
-        uint8_t irqPin;
-    };
     
     virtual ~Scanner() = default;
     virtual void update() = 0;

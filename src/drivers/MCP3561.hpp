@@ -1,3 +1,4 @@
+
 /*
  * NOTES - 
  * The MCP3561 uses SPI mode 0,0.
@@ -96,6 +97,7 @@ enum class OversamplingSettings : uint8_t {
 
 };
 
+#if 0
 class MCP3561 {
   private:
     uint8_t chip_select_pin;
@@ -175,6 +177,7 @@ class MCP3561 {
 
     
 };
+#endif
 
 // uint32_t MCP3561::data_counter;
 // uint32_t MCP3561::data_points_to_sample = 1;

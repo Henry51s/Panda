@@ -1,3 +1,4 @@
+#if 0
 #pragma once
 
 #include "Scanner.hpp"
@@ -26,3 +27,5 @@ class SScanner : public Scanner {
 
 
 };
+
+#endif

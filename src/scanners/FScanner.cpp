@@ -9,7 +9,7 @@ void FScanner::setup() {
         digitalWrite(settingsArr[i].muxPins[j], LOW);
       }
     }
-
+  
     // pinMode(ptADCPins.cs, OUTPUT);
     // pinMode(ptADCPins.irq, INPUT);
   
@@ -17,20 +17,25 @@ void FScanner::setup() {
     // pinMode(ptADCPins.mosi, OUTPUT);
     
     // Initializing ADC
-    adc.setSettings(SPISettingsDefault);
-    Serial.println("0");
-    delay(100);
-    adc.writeRegisterDefaults(); // Called twice to ensure operation after power-cycling
-    Serial.println("1");
-    delay(100);
-    adc.writeRegisterDefaults();
-    Serial.println("2");
-    adc.setGain(GainSettings::GAIN_1);
-    adc.setMuxInputs(MuxSettings::CH0, MuxSettings::AGND);
-    adc.setVREF(1.25f);
-    adc.setBiasCurrent(BiasCurrentSettings::I_0);
-    adc.readAllRegisters();
-    adc.printRegisters();
+    // adc.setSettings(SPISettingsDefault);
+    // Serial.println("0");
+    // delay(100);
+    // adc.writeRegisterDefaults(); // Called twice to ensure operation after power-cycling
+    // Serial.println("1");
+    // delay(100);
+    // adc.writeRegisterDefaults();
+    // Serial.println("2");
+    // adc.setGain(GainSettings::GAIN_1);
+    // adc.setMuxInputs(MuxSettings::CH0, MuxSettings::AGND);
+    // adc.setVREF(1.25f);
+    // adc.setBiasCurrent(BiasCurrentSettings::I_0);
+    // adc.readAllRegisters();
+    // adc.printRegisters();
+
+    adc.begin();
+
+    adc.enableScanChannel(MCP_CH0);
+    adc.startContinuous();
 
 }
 
@@ -39,7 +44,7 @@ void FScanner::update() {
   switch(state) {
     case IDLE:
       // Select mux channel and ADC input channel, reset timer and proceed to WAIT_MUX state
-      adc.setMuxInputs(settingsArr[index].adcChannel, MuxSettings::AGND);
+      // adc.setMuxInputs(settingsArr[index].adcChannel, MuxSettings::AGND);
 
       for (int i = 0; i < 4; i++) {
         digitalWrite(settingsArr[index].muxPins[i], (channel >> i) & 1);
@@ -53,7 +58,7 @@ void FScanner::update() {
       // reset timer, then proceed to WAIT_CONV
       if (timer >= T_MUX_SETTLE_US) {
         // Tell the ADC to perform one-shot
-        adc.trigger();
+        // adc.trigger();
         timer = 0;
         state = WAIT_CONV;
       }
@@ -65,28 +70,10 @@ void FScanner::update() {
       if (timer >= T_CONV_US) {
         // Read ADC output
         // Set samples[channel] to what the ADC outputs
-        float res = adc.getOutput();
+        // float res = adc.getOutput();
+        int32_t res = adc.analogReadContinuous((index == 0) ? MCP_CH1 : MCP_CH0);
         Serial.println(res);
-        settingsArr[index].out[channel] = res;
-
-        // if (bank == 0) {
-        //   Serial.print("S Channel: ");
-        //   Serial.print(channel + 1);
-        //   Serial.print(" | Raw: ");
-        //   Serial.println(res, HEX);
-        // }
-        // else if (bank == 1) {
-        //   Serial.print("PT Channel: ");
-        //   Serial.print(channel + 1);
-        //   Serial.print(" | Raw: ");
-        //   Serial.println(res, HEX);
-        // }
-        // else if (bank == 2) {
-        //   Serial.print("LCTC Channel: ");
-        //   Serial.print(channel + 1);
-        //   Serial.print(" | Raw: ");
-        //   Serial.println(res, HEX);
-        // }
+        // settingsArr[index].out[channel] = res;
 
         // Advancing channel and/or bank
         channel++;
