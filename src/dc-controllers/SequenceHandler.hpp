@@ -1,27 +1,40 @@
 #include <elapsedMillis.h>
-#include "DCChannel.hpp"
+#include "hardware-configs/BoardConfig.hpp"
+#include "hardware-configs/pins.hpp"
 
-#define MAX_NUM_COMMANDS 32
+struct SequenceItem {
+    uint8_t channel;
+    bool state;
+    int delay;
+};
+
+struct DCChannel{
+    uint8_t pin;
+    bool state;
+
+    DCChannel(uint8_t pin_) : pin(pin_) {}
+    void setState(bool state_) {state = state_;}
+};
+
 
 class SequenceHandler {
 
     public:
 
+    void setup();
     void update(void);
     void setCommand(char* command);
     void resetCommand(void);
     bool pollCommand(void);
-    void setState(bool sequenceState);
+    void execute(bool sequenceState);
 
     void printCurrentCommand(void);
 
-    SequenceHandler(DCChannel* dcchannels_);
+    DCChannel channelArr[NUM_DC_CHANNELS];
 
     private:
 
     elapsedMillis sTimer;
-
-
 
     int currentIndex;
     int numCommands;
@@ -29,10 +42,11 @@ class SequenceHandler {
     bool isActive = false;
     bool inDelay = false;
 
-    DCChannel* dcchannels;
+    SequenceItem sequenceArr[NUM_MAX_COMMANDS];
 
-    int solenoidChannels[MAX_NUM_COMMANDS];
-    int solenoidStates[MAX_NUM_COMMANDS];
-    int solenoidDelays[MAX_NUM_COMMANDS];
+
+    // int solenoidChannels[MAX_NUM_COMMANDS];
+    // int solenoidStates[MAX_NUM_COMMANDS];
+    // int solenoidDelays[MAX_NUM_COMMANDS];
 
 };

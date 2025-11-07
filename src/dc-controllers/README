@@ -1,4 +1,0 @@
-Important notes:
-
--Each BBController object has a determineState(...) and getState() function. In main, in loop(), call determineState(...) with live pressure data to calculate the state for that bang bang operation, then use setMode() from the DCChannel object to enable bang bang
--Each DCChannel has a mode, AUTO and MANUAL; MANUAL is for manual actuations, AUTO is for bang bang. in main, manually setting the state of a bang bang channel low takes it out of AUTO and closes that valve

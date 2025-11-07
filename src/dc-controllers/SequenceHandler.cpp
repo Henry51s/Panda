@@ -1,13 +1,17 @@
 #include "dc-controllers/SequenceHandler.hpp"
 
-SequenceHandler::SequenceHandler(DCChannel* dcchannels_) {
-    dcchannels = dcchannels_;
+void SequenceHandler::setup() {
+    for (int i = 0; i < NUM_DC_CHANNELS; i++) {
+        uint8_t pin = PINS_DC_CHANNELS[i];
+        channelArr[i] = DCChannel(pin);
+        pinMode(pin, OUTPUT);
+        digitalWrite(pin, LOW);
+    
+    }
 }
 
 void SequenceHandler::resetCommand() {
-    memset(solenoidChannels, 0, sizeof(solenoidChannels));
-    memset(solenoidStates,   0, sizeof(solenoidStates));
-    memset(solenoidDelays,   0, sizeof(solenoidDelays));
+    memset(sequenceArr, 0, sizeof(sequenceArr));
 }
 
 void SequenceHandler::printCurrentCommand(void) {
@@ -16,10 +20,9 @@ void SequenceHandler::printCurrentCommand(void) {
 
     for (int i = 0; i < numCommands; i++) {
         Serial.print("  ["); Serial.print(i); Serial.print("] ");
-        Serial.print("chan=");  Serial.print(solenoidChannels[i]);
-        Serial.print(", pin="); Serial.print(dcChannels[solenoidChannels[i] - 1]);
-        Serial.print(", state=");  Serial.print(solenoidStates[i]);
-        Serial.print(", delay=");  Serial.println(solenoidDelays[i]);
+        Serial.print("chan=");  Serial.print(sequenceArr[i].channel);
+        Serial.print(", state=");  Serial.print(sequenceArr[i].state);
+        Serial.print(", delay=");  Serial.println(sequenceArr[i].delay);
     } 
     
 }
@@ -49,9 +52,7 @@ void SequenceHandler::setCommand(char* command) {
     isActive       = false;
     sTimer         = 0;
 
-    memset(solenoidChannels, 0, sizeof(solenoidChannels));
-    memset(solenoidStates,   0, sizeof(solenoidStates));
-    memset(solenoidDelays,   0, sizeof(solenoidDelays));
+    resetCommand();
 
     char buf[256];
     strcpy(buf, command);
@@ -69,9 +70,9 @@ void SequenceHandler::setCommand(char* command) {
     char* token = strtok(buf, ",");
 
     if (token && sscanf(token + 1, "%1x%1u.%5u", &channel, &state, &delay) == 3) {
-        solenoidChannels[0] = channel;
-        solenoidStates[0] = state;
-        solenoidDelays[0] = delay;
+        sequenceArr[0].channel = channel;
+        sequenceArr[0].state = state;
+        sequenceArr[0].delay = delay;
 
         Serial.print("Token "); Serial.print("0"); Serial.print(": "); Serial.println(token);
         Serial.print("  ["); Serial.print("0"); Serial.print("] ");
@@ -85,9 +86,9 @@ void SequenceHandler::setCommand(char* command) {
         token = strtok(nullptr, ",");
         Serial.print("Token "); Serial.print(i); Serial.print(": "); Serial.println(token);
         if (token && sscanf(token + 1, "%1x%1u.%5u", &channel, &state, &delay) == 3) {
-            solenoidChannels[i] = channel;
-            solenoidStates[i] = state;
-            solenoidDelays[i] = delay;
+            sequenceArr[i].channel = channel;
+            sequenceArr[i].state = state;
+            sequenceArr[i].delay = delay;
 
             Serial.print("  ["); Serial.print(i); Serial.print("] ");
             Serial.print("chan=");  Serial.print(channel);
@@ -128,7 +129,7 @@ void SequenceHandler::setCommand(char* command) {
 
 }
 
-void SequenceHandler::setState(bool sequenceState) {
+void SequenceHandler::execute(bool sequenceState) {
     if (sequenceState == true) {
         isActive = true;
         // sTimer = solenoidDelays[0] + 1;
@@ -153,24 +154,22 @@ void SequenceHandler::update() {
 
     if (inDelay == false) {
         // digitalWrite(dcChannels[solenoidChannels[currentIndex] - 1], solenoidStates[currentIndex]);
-        dcchannels[solenoidChannels[currentIndex] - 1].setState(solenoidStates[currentIndex]);
+        channelArr[sequenceArr[currentIndex].channel - 1].setState(sequenceArr[currentIndex].state);
 
         Serial.print("Firing idx=");
         Serial.print(currentIndex);
         Serial.print(" chan=");
-        Serial.print(solenoidChannels[currentIndex]);
-        Serial.print(" pin=");
-        Serial.print(solenoidChannels[currentIndex] - 1);
+        Serial.print(sequenceArr[currentIndex].channel);
         Serial.print(" state=");
-        Serial.println(solenoidStates[currentIndex]);
+        Serial.println(sequenceArr[currentIndex].state);
         Serial.print(" duration=");
-        Serial.println(solenoidDelays[currentIndex]);
+        Serial.println(sequenceArr[currentIndex].delay);
 
         sTimer = 0;
         inDelay = true;
     }
 
-    else if (sTimer >= solenoidDelays[currentIndex]) {
+    else if (sTimer >= sequenceArr[currentIndex].delay) {
         inDelay = false;
         currentIndex++;
 
