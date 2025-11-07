@@ -5,10 +5,12 @@
 #include "hardware-configs/pins.hpp"
 
 // #include "scanners/Scanner.hpp"
-#include "scanners/FScanner.hpp" // Fluids DAQ
+// #include "scanners/FScanner.hpp" // Fluids DAQ
 // #include "scanners/SScanner.hpp" // Solenoid current DAQ
 
 #include "telemetry/TelemetryHandler.hpp"
+#include "dc-controllers/SequenceHandler.hpp"
+#include "board-functions/ArmingController.hpp"
 
 /* 
 TODO:
@@ -50,14 +52,16 @@ TODO:
 
 
 // MCP3561 sADC(sADCPins.cs, SPI, SPISettingsDefault); // Solenoid current ADC
-MCP3561 adc(2, -1, 0, &SPI1, 26, 1, 27);
+// MCP3561 adc(2, -1, 0, &SPI1, 26, 1, 27);
 
-void mcp_wrapper() { adc.IRQ_handler(); }
+// void mcp_wrapper() { adc.IRQ_handler(); }
 // FScanner fScanner(adc);
 
 
 
 TelemetryHandler th(Serial2, 256);
+SequenceHandler sh;
+ArmingController ac(PIN_ARM, PIN_DISARM);
 
 
 
@@ -72,14 +76,14 @@ void setup() {
   Serial.begin(SERIAL_BAUD_RATE); // Debugging via serial monitor
 
   
-  while(!Serial);
+  // while(!Serial);
 
-  if (!adc.begin()) {Serial.println("ADC Initialization failed..."); while(1);}
+  // if (!adc.begin()) {Serial.println("ADC Initialization failed..."); while(1);}
 
-  adc.enableScanChannel(MCP_CH1);
-  adc.startContinuous();
+  // adc.enableScanChannel(MCP_CH1);
+  // adc.startContinuous();
 
-  Serial.println("ADC Initialized");
+  // Serial.println("ADC Initialized");
 
 
 
@@ -110,120 +114,68 @@ void setup() {
 
 
   // Call scanner setup()'s here
+  sh.setup();
+  ac.setup();
 
 }
-
-unsigned long previousMillis = 0;
-const long interval          = 1000;
 
 void loop() {
   // // put your main code here, to run repeatedly:
 
+  char idChar;
+
   th.poll();
   if (th.isPacketReady()) {
     char* rxPacket = th.takePacket();
+    idChar = rxPacket[0];
     // Feed rxPacket into command handler
+        if (idChar == 's') {
+      // Serial.println(rxPacket);
+      sh.setCommand(rxPacket);
+    }
+
+    else if (idChar == 'S') {
+
+      char channelChar = rxPacket[1];
+      char stateChar = rxPacket[2];
+
+      unsigned channel, state;
+
+      if (channelChar >= '0' && channelChar <= '9') channel = channelChar - '0';
+      else channel = 10 + (toupper(channelChar) - 'A');     // A-F
+
+      state = stateChar - '0';
+
+      // digitalWrite(dcChannels[channel - 1], state);
+      if (channel >= 1 && channel <= NUM_DC_CHANNELS) {
+        sh.channelArr[channel - 1].setState(state);
+      }
+
+    }
+
+    else if (idChar == 'a') {
+      // Arm
+      ac.arm();
+
+    }
+
+    else if (idChar == 'r') {
+      // Disarm
+      ac.disarm();
+    }
+
+    else if (idChar == 'f') {
+      Serial.println(rxPacket);
+      sh.execute(true);
+    }
+
+    // Resetting all incoming buffers
+    memset(rxPacket, 0, sizeof(rxPacket));
+    // packetReady = false;
   }
 
-  unsigned long currentMillis = millis();
-  Serial.println(currentMillis);
-  if (currentMillis - previousMillis >= interval) {
-    previousMillis = currentMillis;
+  ac.update();
 
-    // read the input on default analog channel:
-    int32_t adcdata0 = adc.analogReadContinuous(MCP_CH0);
-    int32_t adcdata1 = adc.analogReadContinuous(MCP_CH1);
-
-    // Convert the analog reading
-    double voltage0 = adcdata0 * adc.getReference() / adc.getMaxValue();
-    double voltage1 = adcdata1 * adc.getReference() / adc.getMaxValue();
-
-    // print out the value you read:
-    Serial.print("voltage0: ");
-    Serial.println(voltage0, 10);
-    Serial.print("voltage1: ");
-    Serial.println(voltage1, 10);
-  }
-
-
-
-
-  
-  // TODO: Overhaul commands
-  //   if (idChar == 's') {
-  //     Serial.println(rxBuffer);
-  //     sh.setCommand(rxBuffer);
-  //   }
-
-  //   else if (idChar == 'S') {
-
-  //     char channelChar = rxBuffer[1];
-  //     char stateChar = rxBuffer[2];
-
-  //     unsigned channel, state;
-
-  //     if (channelChar >= '0' && channelChar <= '9') channel = channelChar - '0';
-  //     else channel = 10 + (toupper(channelChar) - 'A');     // A-F
-
-  //     state = stateChar - '0';
-
-  //     // digitalWrite(dcChannels[channel - 1], state);
-  //     if (channel >= 1 && channel <= NUM_DC_CHANNELS) {
-  //       dcChannels[channel - 1].setState(state);
-  //     }
-
-  //   }
-
-  //   else if (idChar == 'a') {
-  //     // Arm
-  //     disarmPulse.cancel();
-  //     armPulse.start();
-
-  //   }
-
-  //   else if (idChar == 'r') {
-  //     // Disarm
-  //     armPulse.cancel();
-  //     disarmPulse.start();
-  //   }
-
-  //   else if (idChar == 'f') {
-  //     Serial.println(rxBuffer);
-  //     sh.setState(true);
-  //   }
-
-  //   // Resetting all incoming buffers
-  //   memset(rxBuffer, 0, sizeof(rxBuffer));
-  //   packetReady = false;
-  // }
-
-
-
-
-  // =========== Data Acquisition ===========
-
-  // fScanner.update();
-
-  // float ptData[NUM_PT_CHANNELS], lctcData[NUM_LC_CHANNELS + NUM_TC_CHANNELS];
-
-  // ========== Telemetry ===========
-  // char sPacket[512], ptPacket[512], lctcPacket[512];
-
-  
-  // toCSVRow(banks[1].data,'p', NUM_PT_CHANNELS, ptPacket, sizeof(ptPacket), DATA_DECIMALS);
-  // toCSVRow(banks[2].data,'t', NUM_LC_CHANNELS + NUM_TC_CHANNELS, lctcPacket, sizeof(lctcPacket), DATA_DECIMALS);
-
-  // ========== Printing packets ==========
-  // Serial2.print(sPacket);
-  // Serial2.print(ptPacket);
-  // Serial2.print(lctcPacket);
-
-  // Serial.println(ptPacket);
-  // Serial2.write(ptPacket, ptPacketLen);
-  // ==========
-  // Serial.println("Transmission time: " + String(serialTimer - currentTime) + "us");
-  // Serial.println(Serial.availableForWrite());
-  // Serial.println(ptPacket);
 }
 
 
