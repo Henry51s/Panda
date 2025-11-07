@@ -16,8 +16,6 @@ void SequenceHandler::resetCommand() {
 
 void SequenceHandler::printCurrentCommand(void) {
 
-    uint8_t dcChannels[12] = {34, 35, 36, 37, 38, 39, 40, 41, 17, 16, 15, 14};
-
     for (int i = 0; i < numCommands; i++) {
         Serial.print("  ["); Serial.print(i); Serial.print("] ");
         Serial.print("chan=");  Serial.print(sequenceArr[i].channel);
@@ -76,10 +74,10 @@ void SequenceHandler::setCommand(char* command) {
 
         Serial.print("Token "); Serial.print("0"); Serial.print(": "); Serial.println(token);
         Serial.print("  ["); Serial.print("0"); Serial.print("] ");
-        Serial.print("chan=");  Serial.print(channel);
+        Serial.print("chan=");  Serial.print(sequenceArr[0].channel);
         // Serial.print(", pin="); Serial.print(dcChannels[solenoidChannels[i] - 1]);
-        Serial.print(", state=");  Serial.print(state);
-        Serial.print(", duration=");  Serial.println(delay);
+        Serial.print(", state=");  Serial.print(sequenceArr[0].state);
+        Serial.print(", duration=");  Serial.println(sequenceArr[0].delay);
     }
 
     for (int i = 1; i < numCommands; i++) {
@@ -91,10 +89,10 @@ void SequenceHandler::setCommand(char* command) {
             sequenceArr[i].delay = delay;
 
             Serial.print("  ["); Serial.print(i); Serial.print("] ");
-            Serial.print("chan=");  Serial.print(channel);
+            Serial.print("chan=");  Serial.print(sequenceArr[i].channel);
             // Serial.print(", pin="); Serial.print(dcChannels[solenoidChannels[i] - 1]);
-            Serial.print(", state=");  Serial.print(state);
-            Serial.print(", duration=");  Serial.println(delay);
+            Serial.print(", state=");  Serial.print(sequenceArr[i].state);
+            Serial.print(", duration=");  Serial.println(sequenceArr[i].delay);
 
 
         }

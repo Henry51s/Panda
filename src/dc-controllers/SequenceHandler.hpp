@@ -12,8 +12,12 @@ struct DCChannel{
     uint8_t pin;
     bool state;
 
+    DCChannel() : pin(0), state(false) {}
     DCChannel(uint8_t pin_) : pin(pin_) {}
-    void setState(bool state_) {state = state_;}
+    void setState(bool state_) {
+        state = state_;
+        digitalWrite(pin, state);
+    }
 };
 
 

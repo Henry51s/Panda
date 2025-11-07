@@ -129,8 +129,9 @@ void loop() {
     char* rxPacket = th.takePacket();
     idChar = rxPacket[0];
     // Feed rxPacket into command handler
-        if (idChar == 's') {
-      // Serial.println(rxPacket);
+    if (idChar == 's') {
+      Serial.print("Sequence packet: ");
+      Serial.println(rxPacket);
       sh.setCommand(rxPacket);
     }
 
@@ -149,6 +150,10 @@ void loop() {
       // digitalWrite(dcChannels[channel - 1], state);
       if (channel >= 1 && channel <= NUM_DC_CHANNELS) {
         sh.channelArr[channel - 1].setState(state);
+        Serial.print("Solenoid Command: ");
+        Serial.print(channel);
+        Serial.print(" | ");
+        Serial.println(state);
       }
 
     }
@@ -156,12 +161,14 @@ void loop() {
     else if (idChar == 'a') {
       // Arm
       ac.arm();
+      Serial.println("Arming!");
 
     }
 
     else if (idChar == 'r') {
       // Disarm
       ac.disarm();
+      Serial.println("Disarming!");
     }
 
     else if (idChar == 'f') {
