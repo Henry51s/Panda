@@ -4,9 +4,7 @@
 #include "hardware-configs/BoardConfig.hpp"
 
 class ArmingController {
-
-
-
+    
     private:
 
     enum State {

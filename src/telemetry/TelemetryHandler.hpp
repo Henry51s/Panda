@@ -30,5 +30,4 @@ class TelemetryHandler {
     // quality of life functions
     bool toCSVRow(const float* data, char identifier, size_t n, char* out, size_t outSize, uint8_t decimals);
 
-
 };

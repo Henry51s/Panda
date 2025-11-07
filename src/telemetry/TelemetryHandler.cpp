@@ -67,4 +67,5 @@ bool TelemetryHandler::toCSVRow(const float* data, char identifier, size_t n, ch
 
     out[used] = '\0';                                  // null-terminate
     return true;
+    
 }

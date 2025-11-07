@@ -181,6 +181,7 @@ void loop() {
     // packetReady = false;
   }
 
+  sh.update();
   ac.update();
 
 }
